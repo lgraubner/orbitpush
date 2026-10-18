@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "orbitpush.json",
+  "type": "object",
+  "required": ["name", "outputDir", "spa", "domains", "region", "replicationRegions", "geoZones", "storageZoneId", "pullZoneId"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "name": { "type": "string", "description": "Name of the storage zone and pull zone." },
+    "outputDir": { "type": "string", "description": "Build output directory that gets deployed." },
+    "spa": { "type": "boolean", "description": "Serve index.html with status 200 for unknown paths without a file extension." },
+    "domains": { "type": "array", "items": { "type": "string" }, "description": "Custom hostnames. Added with a free SSL certificate on deploy; removing one here does not remove it from bunny.net." },
+    "region": { "enum": ["DE", "UK", "SE", "NY", "LA", "SG", "SYD", "BR", "JH"], "description": "Main storage region. Cannot be changed after init." },
+    "replicationRegions": { "type": "array", "items": { "enum": ["DE", "UK", "SE", "NY", "LA", "SG", "SYD", "BR", "JH"] }, "description": "Storage replication regions. bunny.net does not allow removing them." },
+    "geoZones": { "type": "array", "items": { "enum": ["EU", "US", "ASIA", "SA", "AF"] }, "description": "CDN delivery regions of the pull zone." },
+    "storageZoneId": { "type": "integer" },
+    "pullZoneId": { "type": "integer" }
+  }
+}

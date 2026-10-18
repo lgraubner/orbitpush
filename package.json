@@ -1,0 +1,29 @@
+{
+  "name": "orbitpush",
+  "version": "0.1.0",
+  "description": "Deploy static sites to your own bunny.net storage zone and pull zone",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "orbitpush": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "schema.json"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc && esbuild src/cli.ts --bundle --minify --platform=node --format=esm --target=node22 --banner:js=\"import { createRequire } from \\\"node:module\\\"; const require = createRequire(import.meta.url);\" --outfile=dist/cli.js",
+    "test": "node --test",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@inquirer/prompts": "^8.7.3",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "mri": "^1.2.0",
+    "typescript": "^5.9.0"
+  }
+}
