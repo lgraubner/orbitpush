@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
 
-import { checkbox, confirm, input, password, select } from "@inquirer/prompts";
+import { checkbox, input, password, select } from "@inquirer/prompts";
 
 import {
   api,
@@ -28,7 +28,6 @@ import { errorMessage, log } from "./log.ts";
 export type InitFlags = {
   name?: string;
   dir?: string;
-  spa?: boolean;
   domain?: string;
   alias?: string | string[];
   region?: string;
@@ -62,9 +61,6 @@ export async function init(flags: InitFlags, interactive: boolean) {
   const defaultDir = ["dist", "build", "out", "public"].find((dir) => existsSync(dir)) ?? "dist";
   const outputDir = await ask(flags.dir, defaultDir, () =>
     input({ message: "Build output directory", default: defaultDir }),
-  );
-  const spa = await ask(flags.spa, false, () =>
-    confirm({ message: "Single-page app (serve index.html for unknown paths)?", default: false }),
   );
   const domain =
     (await ask(flags.domain, "", () => input({ message: "Custom domain (optional)" }))).trim() ||
@@ -135,7 +131,6 @@ export async function init(flags: InitFlags, interactive: boolean) {
     config = {
       name,
       outputDir,
-      spa,
       domain,
       aliases,
       region,

@@ -36,7 +36,8 @@ export async function deploy(apiKey: string, config: Config) {
   const files = await readOutput(config.outputDir);
   if (!files.has("index.html")) log.warn(`No index.html in ${config.outputDir}`);
 
-  const rules = [...domainRules(config), ...(await readRules(config.outputDir))];
+  const { rules: fileRules, spa } = await readRules(config.outputDir);
+  const rules = [...domainRules(config), ...fileRules];
 
   log.step("Comparing with storage zone");
   const bucket = storage(zone);
@@ -62,7 +63,7 @@ export async function deploy(apiKey: string, config: Config) {
     upload,
   );
 
-  await applySettings(apiKey, { config, has404: files.has("404.html") });
+  await applySettings(apiKey, { config, spa, has404: files.has("404.html") });
   await syncRules(apiKey, config.pullZoneId, rules);
 
   if (stale.length) {
@@ -110,12 +111,12 @@ async function readRules(dir: string) {
 
   for (const warning of [...redirects.warnings, ...headers.warnings]) log.warn(warning);
 
-  return [...redirects.rules, ...headers.rules];
+  return { rules: [...redirects.rules, ...headers.rules], spa: redirects.spa };
 }
 
 async function applySettings(
   apiKey: string,
-  { config, has404 }: { config: Config; has404: boolean },
+  { config, spa, has404 }: { config: Config; spa: boolean; has404: boolean },
 ) {
   log.step("Applying settings");
   await api(apiKey, {
@@ -123,8 +124,8 @@ async function applySettings(
     path: `/storagezone/${config.storageZoneId}`,
     body: {
       ReplicationRegions: config.replicationRegions.filter((region) => region !== config.region),
-      Rewrite404To200: config.spa,
-      Custom404FilePath: config.spa ? "/index.html" : has404 ? "/404.html" : "",
+      Rewrite404To200: spa,
+      Custom404FilePath: spa ? "/index.html" : has404 ? "/404.html" : "",
     },
   });
   await api(apiKey, {

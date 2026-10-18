@@ -93,7 +93,6 @@ test("destroy without --yes outside a terminal exits with 1 and keeps orbitpush.
     JSON.stringify({
       name: "site",
       outputDir: "dist",
-      spa: false,
       region: "DE",
       replicationRegions: [],
       geoZones: ["EU"],

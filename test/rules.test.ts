@@ -20,7 +20,6 @@ test("redirects", () => {
 /home              /
 /blog/:year/:slug  /news/:year/:slug  302
 /docs/*            https://docs.example.com/:splat  308!
-/*                 /index.html  200
 /api/*             https://api.example.com/:splat  200
 /store id=:id      /blog/:id  301
 /en/*              /en/404.html  404
@@ -40,8 +39,27 @@ test("redirects", () => {
   ]);
   expect(rules[0].ActionType).toBe(1);
   expect(rules[0].Description).toMatch(/^orbitpush [0-9a-f]{10} \/home \/ 301$/);
-  expect(warnings).toHaveLength(7);
-  expect(warnings.find((w) => w.startsWith("_redirects:6 "))).toMatch(/spa/);
+  expect(warnings).toHaveLength(6);
+});
+
+test("/* /index.html 200 turns on SPA mode instead of becoming an edge rule", () => {
+  expect(parseRedirects("/old /new\n/*  /index.html  200")).toMatchObject({
+    spa: true,
+    warnings: [],
+    rules: [{ ActionParameter1: "https://%{Url.Hostname}/new" }],
+  });
+  expect(parseRedirects("/old /new").spa).toBe(false);
+
+  for (const line of [
+    "/* /index.html 200!",
+    "/* /index.html 200 Country=de",
+    "/app/* /app/index.html 200",
+    "/* /index.html 404",
+  ]) {
+    const { spa, rules, warnings } = parseRedirects(line);
+    expect({ line, spa, rules }).toEqual({ line, spa: false, rules: [] });
+    expect(warnings).toHaveLength(1);
+  }
 });
 
 test("headers", () => {

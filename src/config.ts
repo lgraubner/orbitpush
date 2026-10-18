@@ -19,7 +19,6 @@ const ConfigSchema = z
   .object({
     name: z.string(),
     outputDir: z.string(),
-    spa: z.boolean(),
     domain: z.optional(z.string()),
     aliases: z._default(z.array(z.string()), []),
     region: Region,

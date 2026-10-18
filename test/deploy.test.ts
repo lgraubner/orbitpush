@@ -20,7 +20,6 @@ function config(outputDir: string): Config {
   return {
     name: "site",
     outputDir,
-    spa: false,
     aliases: [],
     region: "DE",
     replicationRegions: ["DE", "NY"],
@@ -271,12 +270,14 @@ test("deploy enables exactly the configured delivery regions on the pull zone", 
   });
 });
 
-test("deploy serves index.html for unknown paths in SPA mode", async () => {
+test("deploy serves index.html for unknown paths when _redirects has the SPA rule", async () => {
   const dir = await outputDir();
-  const { bodies } = fakeBunny();
+  await writeFile(join(dir, "_redirects"), "/a /b\n/* /index.html 200");
+  const { bodies, writes } = fakeBunny();
 
-  await deploy("key", { ...config(dir), spa: true });
+  await deploy("key", config(dir));
 
+  expect(writes.filter((w) => w.includes("/edgerules/addOrUpdate"))).toHaveLength(1);
   expect(bodies["POST https://api.bunny.net/storagezone/1"]).toMatchObject({
     Rewrite404To200: true,
     Custom404FilePath: "/index.html",

@@ -28,7 +28,6 @@ Usage:
 Init options (skip the matching prompt):
   --name <name>      Storage zone and pull zone name
   --dir <path>       Build output directory
-  --spa              Serve index.html for unknown paths
   --domain <host>    Custom domain
   --alias <host>     Hostname that redirects to the domain, repeatable
   --region <code>    Main storage region (DE, UK, SE, NY, LA, SG, SYD, BR, JH)

@@ -11,7 +11,6 @@ const valid = {
   $schema: "https://unpkg.com/orbitpush/schema.json",
   name: "site",
   outputDir: "dist",
-  spa: false,
   domain: "www.example.com",
   region: "DE",
   replicationRegions: ["NY"],

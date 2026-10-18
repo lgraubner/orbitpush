@@ -13,7 +13,7 @@ npx orbitpush deploy       # uploads, syncs edge rules, purges the cache
 
 ## `orbitpush init`
 
-Asks for the project name, build output directory, SPA mode, a custom domain and its aliases, the main storage region, replication regions and CDN delivery regions. Then it creates:
+Asks for the project name, build output directory, a custom domain and its aliases, the main storage region, replication regions and CDN delivery regions. Then it creates:
 
 1. a storage zone (name = project name),
 2. a pull zone with the storage zone as its origin (available at `https://<name>.b-cdn.net`),
@@ -24,7 +24,7 @@ For a custom domain, point a `CNAME` record to `<name>.b-cdn.net`. For an apex d
 Each prompt can be skipped with a flag. Use `--yes` for non-interactive setup:
 
 ```bash
-npx orbitpush init --name my-site --dir dist --spa --domain www.example.com --alias example.com --region DE --yes
+npx orbitpush init --name my-site --dir dist --domain www.example.com --alias example.com --region DE --yes
 ```
 
 The pull zone and storage zone names are global across bunny.net. If the name is taken, choose another one.
@@ -35,7 +35,7 @@ If `init` fails before `orbitpush.json` is written, it deletes the zones it just
 
 1. Reads `orbitpush.json`, `BUNNY_API_KEY` and the rule files. A missing `_headers` or `_redirects` means no rules of that kind. A rule file that exists but cannot be read stops the deploy before anything changes.
 2. Compares the output directory with the storage zone using SHA256 checksums and uploads only changed files, HTML files last.
-3. Applies the settings from `orbitpush.json`: SPA/404 handling, replication regions, delivery regions and domains.
+3. Applies the settings: [SPA mode](#spa-mode) or the [404 page](#404-page) from the output directory, and replication regions, delivery regions and domains from `orbitpush.json`.
 4. Turns `_headers` and `_redirects` into edge rules (see below).
 5. Deletes files from the storage zone that are no longer in the build.
 6. Purges the pull zone cache.
@@ -57,7 +57,6 @@ Commit this file. It never contains the API key.
   "$schema": "https://unpkg.com/orbitpush/schema.json",
   "name": "my-site",
   "outputDir": "dist",
-  "spa": false,
   "domain": "www.example.com",
   "aliases": ["example.com"],
   "region": "DE",
@@ -73,16 +72,11 @@ Settings are applied on every deploy, so you can change them later:
 | Field                | Notes                                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------------------- |
 | `outputDir`          | Directory that gets deployed.                                                                           |
-| `spa`                | `true`: unknown paths without a file extension return `/index.html` with status 200.                    |
 | `domain`             | Optional. Custom domain, added with SSL. Removing it does **not** remove it from bunny.net.             |
 | `aliases`            | Optional. Hostnames added with SSL that 301-redirect every path and query to `domain`. Need a `domain`. |
 | `region`             | Main storage region. Fixed after `init`.                                                                |
 | `replicationRegions` | Can only be added. bunny.net does not support removing replication regions.                             |
 | `geoZones`           | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`. At least one.                                     |
-
-### 404 page
-
-If `spa` is `false` and the output contains `404.html`, it is served for missing files. In SPA mode, `index.html` takes this role.
 
 ### Domains and search engines
 
@@ -140,7 +134,7 @@ https://example.com/*  https://www.example.com/:splat  301!
 
 ### Not supported
 
-- **Rewrites and proxies (status `200`).** A storage zone can't serve another path internally. `/* /index.html 200` is recognised; set `"spa": true` instead.
+- **Rewrites and proxies (status `200`).** A storage zone can't serve another path internally. The one exception is `/* /index.html 200`, which turns on [SPA mode](#spa-mode).
 - **Custom status pages (`404`, `410`, …)** for individual paths. Only the global 404 page is supported.
 - **Shadowing.** On Netlify, a redirect without `!` only applies if no file exists at the path. Edge rules run before the storage zone is asked, so every redirect behaves as if it had `!`.
 - **Query parameter matching** (`/store id=:id /product/:id`) and the conditions `Language=`, `Role=` and `Cookie=`.
@@ -148,6 +142,28 @@ https://example.com/*  https://www.example.com/:splat  301!
 - **`*` in the middle of a path or inside a segment** (`/a/*/b`, `/file-*.js`).
 - **Placeholders inside a segment** (`/a-:id`). Placeholders must be a whole segment.
 - **Header removal** (`! Header` from the Cloudflare format) and `netlify.toml`.
+
+## SPA mode
+
+A single-page app routes in the browser, so every route has to load `index.html`. Turn on SPA mode as on Netlify, with this line in `_redirects`:
+
+```
+/*  /index.html  200
+```
+
+`_redirects` must end up in the root of the output directory. With Vite, Astro and most other build tools, put it in `public/` and the build copies it there.
+
+The line does not become an edge rule. On each deploy, orbitpush sets the storage zone's 404 handling instead: a request for a path without a file extension that matches no file returns `/index.html` with status `200`. Remove the line, and the next deploy turns SPA mode off again.
+
+- Files that exist are served as usual, like a Netlify rewrite without `!`. `/about` still serves `about/index.html` if it exists.
+- Redirects in `_redirects` run first, wherever the SPA line sits in the file. On Netlify, a redirect below the SPA line would never match.
+- A missing path with a file extension, such as `/assets/old.js`, returns status `404` with `index.html` as the body. Netlify returns `200` there. A broken asset link fails instead of loading HTML as JavaScript.
+- `404.html` is not used in SPA mode.
+- Only this exact line counts. `/* /index.html 200!`, a line with a condition, and rewrites to other targets such as `/app/* /app/index.html 200` are skipped with a warning.
+
+## 404 page
+
+Without SPA mode, a `404.html` in the root of the output directory is served with status `404` for every missing file.
 
 ## Development
 

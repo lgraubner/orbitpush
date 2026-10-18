@@ -11,7 +11,6 @@ afterEach(() => {
 const config: Config = {
   name: "site",
   outputDir: "dist",
-  spa: false,
   aliases: [],
   region: "DE",
   replicationRegions: [],

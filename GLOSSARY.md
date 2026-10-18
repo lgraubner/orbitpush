@@ -22,6 +22,10 @@ A bunny.net pull zone rule that matches a URL pattern and redirects or sets resp
 **Managed rule**:
 An edge rule whose description starts with `orbitpush <hash>`. Only managed rules are written or deleted on deploy; rules created in the dashboard are never touched. The hash covers the rule's content, so a changed rule is a new managed rule. Its `OrderIndex` is its position in the rule files, outside the hash. Every deploy rewrites each managed rule still in the files, which undoes dashboard edits to it and moves it to its current position.
 
+**SPA mode**:
+The storage zone setting that serves `index.html` with status 200 for a missing path without a file extension. The line `/* /index.html 200` in `_redirects` turns it on; it is the only rewrite orbitpush supports, and it is not an edge rule.
+_Avoid_: SPA fallback, `spa` option
+
 **Custom domain**:
 The one hostname in `domain` that serves the site. Every other hostname of the site is an alias.
 _Avoid_: main domain, primary domain

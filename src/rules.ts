@@ -151,9 +151,10 @@ export function disabledRule(): EdgeRule {
   };
 }
 
-export function parseRedirects(text: string): Parsed {
+export function parseRedirects(text: string): Parsed & { spa: boolean } {
   const rules: EdgeRule[] = [];
   const warnings: string[] = [];
+  let spa = false;
 
   lines(text).forEach(([n, line]) => {
     const skip = (why: string) => warnings.push(`_redirects:${n} skipped (${why}): ${line}`);
@@ -177,10 +178,12 @@ export function parseRedirects(text: string): Parsed {
       ),
     ];
 
-    const status = Number(statusToken.replace(/!$/, ""));
-    if (status === 200 && from === "/*" && to === "/index.html") {
-      return skip('set "spa": true in orbitpush.json instead');
+    if (from === "/*" && to === "/index.html" && statusToken === "200" && !conditions.length) {
+      spa = true;
+      return;
     }
+
+    const status = Number(statusToken.replace(/!$/, ""));
 
     const served = SERVED_STATUS.get(status);
     if (!served) return skip(`status ${statusToken} is not supported, only redirects`);
@@ -217,7 +220,7 @@ export function parseRedirects(text: string): Parsed {
     }
   });
 
-  return { rules, warnings };
+  return { rules, warnings, spa };
 }
 
 export function parseHeaders(text: string): Parsed {

@@ -31,6 +31,6 @@ Each feature file has an H1, a one-paragraph description, and these H2s in order
 - [Init](./init.md): create the storage zone and pull zone and write `orbitpush.json`, interactively or with flags, including cleanup when it fails.
 - [Deploy](./deploy.md): upload changed files, delete stale files, purge, rerun with nothing changed, and safe failure.
 - [Edge rules](./edge-rules.md): `_redirects` and `_headers` become managed rules; unsupported lines warn; dashboard rules stay.
-- [Settings](./settings.md): SPA and 404 handling, replication regions, delivery regions, and custom domains with SSL, re-applied on every deploy.
+- [Settings](./settings.md): SPA mode (from `_redirects`) and the 404 page, replication regions, delivery regions, and custom domains with SSL, re-applied on every deploy.
 - [Availability](./availability.md): `disable`, `enable` and `destroy`, each run twice to show they converge.
 - [CLI basics](./cli-basics.md): help, version, unknown commands, missing key or config, and exit codes.

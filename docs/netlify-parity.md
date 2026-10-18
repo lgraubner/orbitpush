@@ -11,7 +11,7 @@ orbitpush uses two edge rule actions today, `Redirect` (1) and `SetResponseHeade
 | Static deploy behind a CDN                                                          | storage zone + pull zone      |
 | `_redirects` 301/302 (303/307 as 302, 308 as 301), `:placeholders`, `:splat`, hosts | edge rule `Redirect`          |
 | `_headers`                                                                          | edge rule `SetResponseHeader` |
-| SPA fallback, `404.html`                                                            | pull zone settings            |
+| `/* /index.html 200` (SPA mode), `404.html`                                         | storage zone settings         |
 | Custom domains with free SSL                                                        | `addHostname` + certificate   |
 | `Country=` condition                                                                | trigger `CountryCode` (4)     |
 | Upload only changed files, cache purge                                              | SHA256 diff + purge           |
