@@ -15,17 +15,32 @@ export const Region = z.enum(STORAGE_REGIONS);
 export type Region = z.infer<typeof Region>;
 export type GeoZone = (typeof GEO_ZONES)[number];
 
-const ConfigSchema = z.object({
-  name: z.string(),
-  outputDir: z.string(),
-  spa: z.boolean(),
-  domains: z.array(z.string()),
-  region: Region,
-  replicationRegions: z.array(Region),
-  geoZones: z.array(z.enum(GEO_ZONES)).check(z.minLength(1)),
-  storageZoneId: z.int(),
-  pullZoneId: z.int(),
-});
+const ConfigSchema = z
+  .object({
+    name: z.string(),
+    outputDir: z.string(),
+    spa: z.boolean(),
+    domain: z.optional(z.string()),
+    aliases: z._default(z.array(z.string()), []),
+    region: Region,
+    replicationRegions: z.array(Region),
+    geoZones: z.array(z.enum(GEO_ZONES)).check(z.minLength(1)),
+    storageZoneId: z.int(),
+    pullZoneId: z.int(),
+  })
+  .check((ctx) => {
+    const problem = aliasProblem(ctx.value);
+    if (problem)
+      ctx.issues.push({ code: "custom", message: problem, path: ["aliases"], input: ctx.value });
+  });
+
+export function aliasProblem({ domain, aliases }: { domain?: string; aliases: string[] }) {
+  if (!aliases.length) return undefined;
+  if (!domain) return "aliases need a domain to redirect to";
+
+  const repeated = aliases.find((alias) => alias.toLowerCase() === domain.toLowerCase());
+  return repeated ? `alias ${repeated} is the domain itself` : undefined;
+}
 
 export type Config = z.infer<typeof ConfigSchema>;
 

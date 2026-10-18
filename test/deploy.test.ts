@@ -21,7 +21,7 @@ function config(outputDir: string): Config {
     name: "site",
     outputDir,
     spa: false,
-    domains: [],
+    aliases: [],
     region: "DE",
     replicationRegions: ["DE", "NY"],
     geoZones: ["EU"],
@@ -292,7 +292,7 @@ test("deploy adds a new domain, requests its certificate and forces SSL", async 
     hostnames: [{ Value: "site.b-cdn.net", HasCertificate: true, ForceSSL: false }],
   });
 
-  await deploy("key", { ...config(dir), domains: ["www.example.com"] });
+  await deploy("key", { ...config(dir), domain: "www.example.com" });
 
   expect(domainRequests(requests)).toEqual([
     "POST https://api.bunny.net/pullzone/2/addHostname",
@@ -314,7 +314,7 @@ test("deploy forces SSL on a domain that has a certificate without requesting an
     hostnames: [{ Value: "www.example.com", HasCertificate: true, ForceSSL: false }],
   });
 
-  await deploy("key", { ...config(dir), domains: ["www.example.com"] });
+  await deploy("key", { ...config(dir), domain: "www.example.com" });
 
   expect(domainRequests(requests)).toEqual(["POST https://api.bunny.net/pullzone/2/setForceSSL"]);
   expect(bodies["POST https://api.bunny.net/pullzone/2/setForceSSL"]).toEqual({
@@ -331,7 +331,7 @@ test("deploy warns and skips Force SSL when the certificate cannot be obtained",
     certificateFails: true,
   });
 
-  await deploy("key", { ...config(dir), domains: ["www.example.com"] });
+  await deploy("key", { ...config(dir), domain: "www.example.com" });
 
   expect(domainRequests(requests)).toEqual([
     "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=www.example.com",
@@ -346,7 +346,7 @@ test("deploy leaves a domain with certificate and Force SSL alone, matching case
     hostnames: [{ Value: "www.example.com", HasCertificate: true, ForceSSL: true }],
   });
 
-  await deploy("key", { ...config(dir), domains: ["WWW.Example.com"] });
+  await deploy("key", { ...config(dir), domain: "WWW.Example.com" });
 
   expect(domainRequests(requests)).toEqual([]);
 });
@@ -404,4 +404,103 @@ test("deploy fails without writing when the storage zone keeps rejecting its pas
 
   expect(String(error)).toMatch(/HTTP 401/);
   expect(writes).toEqual([]);
+});
+
+// bunny.net reads a trigger pattern after "pattern:" as a Lua pattern, whose escape is %
+const triggerMatches = (rule: unknown, url: string) =>
+  (rule as { Triggers: { PatternMatches: string[] }[] }).Triggers.some((trigger) =>
+    trigger.PatternMatches.some((p) =>
+      new RegExp(p.replace(/^pattern:/, "").replace(/%(.)/g, "\\$1")).test(url),
+    ),
+  );
+
+test("deploy keeps the disabled rule while deleting other stale managed rules", async () => {
+  const dir = await outputDir();
+  vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { writes } = fakeBunny({
+    edgeRules: [
+      { Guid: "off", Description: "orbitpush disabled", OrderIndex: 0 },
+      { Guid: "old", Description: "orbitpush 0000000000 /x /y 301", OrderIndex: 1 },
+    ],
+  });
+
+  await deploy("key", config(dir));
+
+  expect(writes).toContain("DELETE https://api.bunny.net/pullzone/2/edgerules/old");
+  expect(writes).not.toContain("DELETE https://api.bunny.net/pullzone/2/edgerules/off");
+  expect(writes).toContain("PUT https://storage.bunnycdn.com/site/index.html");
+});
+
+test("deploy adds each alias like a domain, lowercased", async () => {
+  const dir = await outputDir();
+  const { requests, bodies } = fakeBunny({
+    hostnames: [{ Value: "www.example.com", HasCertificate: true, ForceSSL: true }],
+  });
+
+  await deploy("key", { ...config(dir), domain: "www.example.com", aliases: ["Example.COM"] });
+
+  expect(domainRequests(requests)).toEqual([
+    "POST https://api.bunny.net/pullzone/2/addHostname",
+    "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=example.com",
+    "POST https://api.bunny.net/pullzone/2/setForceSSL",
+  ]);
+  expect(bodies["POST https://api.bunny.net/pullzone/2/addHostname"]).toEqual({
+    Hostname: "example.com",
+  });
+  expect(bodies["POST https://api.bunny.net/pullzone/2/setForceSSL"]).toEqual({
+    Hostname: "example.com",
+    ForceSSL: true,
+  });
+});
+
+test("deploy redirects each alias to the main domain and marks the b-cdn.net host noindex, before the file rules", async () => {
+  const dir = await outputDir();
+  await writeFile(join(dir, "_redirects"), "/a /b");
+  const { edgeRuleWrites } = fakeBunny({ edgeRules: [] });
+
+  await deploy("key", {
+    ...config(dir),
+    domain: "www.example.com",
+    aliases: ["example.com", "example.net"],
+  });
+
+  const rules = edgeRuleWrites as {
+    Description: string;
+    ActionType: number;
+    ActionParameter1: string;
+    ActionParameter2: string;
+    OrderIndex: number;
+  }[];
+  const fileOrder = rules.find((r) => r.Description === kept)?.OrderIndex ?? -Infinity;
+  const redirect = (alias: string) =>
+    rules.filter(
+      (r) =>
+        r.ActionType === 1 &&
+        r.ActionParameter1 === "https://www.example.com%{Url.Path}" &&
+        r.ActionParameter2 === "301" &&
+        triggerMatches(r, `https://${alias}/some/page`),
+    );
+  const noindex = rules.filter(
+    (r) =>
+      r.ActionType === 5 &&
+      r.ActionParameter1 === "X-Robots-Tag" &&
+      r.ActionParameter2 === "noindex",
+  );
+
+  expect(rules).toHaveLength(4);
+  expect(rules.every((r) => r.Description.startsWith("orbitpush "))).toBe(true);
+  for (const alias of ["example.com", "example.net"]) {
+    expect(redirect(alias)).toHaveLength(1);
+    expect(triggerMatches(redirect(alias)[0], "https://www.example.com/some/page")).toBe(false);
+    expect(triggerMatches(redirect(alias)[0], "https://shop.example.com/")).toBe(false);
+    expect(triggerMatches(redirect(alias)[0], "https://site.b-cdn.net/")).toBe(false);
+    expect(redirect(alias)[0].OrderIndex).toBeLessThan(fileOrder);
+  }
+
+  expect(noindex).toHaveLength(1);
+  expect(triggerMatches(noindex[0], "https://site.b-cdn.net/a")).toBe(true);
+  expect(triggerMatches(noindex[0], "http://site.b-cdn.net/")).toBe(true);
+  expect(triggerMatches(noindex[0], "https://www.example.com/a")).toBe(false);
+  expect(triggerMatches(noindex[0], "https://example.com/a")).toBe(false);
+  expect(noindex[0].OrderIndex).toBeLessThan(fileOrder);
 });

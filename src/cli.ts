@@ -5,6 +5,9 @@ import { parseArgs } from "./args.ts";
 import { apiKeyFromEnv } from "./bunny.ts";
 import { readConfig } from "./config.ts";
 import { deploy } from "./deploy.ts";
+import { destroy } from "./destroy.ts";
+import { disable } from "./disable.ts";
+import { enable } from "./enable.ts";
 import { init } from "./init.ts";
 import { errorMessage, log } from "./log.ts";
 import { z } from "./zod.ts";
@@ -18,14 +21,21 @@ const help = `Deploy static sites to your own bunny.net account.
 Usage:
   orbitpush init     Create a storage zone + pull zone and write orbitpush.json
   orbitpush deploy   Upload the build output, sync edge rules and purge the cache
+  orbitpush disable  Block all requests to the site, keeping files and settings
+  orbitpush enable   Serve the site again after disable
+  orbitpush destroy  Delete the pull zone, storage zone and orbitpush.json
 
 Init options (skip the matching prompt):
   --name <name>      Storage zone and pull zone name
   --dir <path>       Build output directory
   --spa              Serve index.html for unknown paths
-  --domain <host>    Custom domain, repeatable
+  --domain <host>    Custom domain
+  --alias <host>     Hostname that redirects to the domain, repeatable
   --region <code>    Main storage region (DE, UK, SE, NY, LA, SG, SYD, BR, JH)
   -y, --yes          Use defaults for everything else
+
+Destroy options:
+  -y, --yes          Delete without asking to type the project name
 
 Environment:
   BUNNY_API_KEY      Your bunny.net account API key (required)`;
@@ -45,6 +55,12 @@ try {
     const started = Date.now();
     await deploy(apiKeyFromEnv(), await readConfig());
     log.success(`Deployed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  } else if (args.command === "disable") {
+    await disable(apiKeyFromEnv(), await readConfig());
+  } else if (args.command === "enable") {
+    await enable(apiKeyFromEnv(), await readConfig());
+  } else if (args.command === "destroy") {
+    await destroy(apiKeyFromEnv(), await readConfig(), { yes: args.flags.yes, interactive });
   } else {
     process.stderr.write(`${help}\n`);
     process.exitCode = 2;

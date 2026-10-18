@@ -9,7 +9,7 @@ The bunny.net file store that holds the deployed files. Created by `init` with t
 _Avoid_: bucket, origin
 
 **Pull zone**:
-The bunny.net CDN in front of the storage zone, reachable at `<name>.b-cdn.net` and at each custom domain.
+The bunny.net CDN in front of the storage zone, reachable at `<name>.b-cdn.net`, the custom domain and its aliases.
 _Avoid_: CDN zone, site
 
 **Output directory**:
@@ -21,6 +21,18 @@ A bunny.net pull zone rule that matches a URL pattern and redirects or sets resp
 
 **Managed rule**:
 An edge rule whose description starts with `orbitpush <hash>`. Only managed rules are written or deleted on deploy; rules created in the dashboard are never touched. The hash covers the rule's content, so a changed rule is a new managed rule. Its `OrderIndex` is its position in the rule files, outside the hash. Every deploy rewrites each managed rule still in the files, which undoes dashboard edits to it and moves it to its current position.
+
+**Custom domain**:
+The one hostname in `domain` that serves the site. Every other hostname of the site is an alias.
+_Avoid_: main domain, primary domain
+
+**Alias**:
+A hostname in `aliases` that is added to the pull zone with SSL and 301-redirects to the custom domain, keeping path and query string.
+_Avoid_: secondary domain, redirect domain
+
+**Disabled site**:
+A pull zone with the edge rule `orbitpush disabled`, which blocks every request. `disable` adds it, `enable` removes it, and `deploy` leaves it in place. The rule on the pull zone is the only record of the state.
+_Avoid_: paused, suspended
 
 **Stale file**:
 A file in the storage zone that is no longer in the output directory. Deleted after the upload, not before.

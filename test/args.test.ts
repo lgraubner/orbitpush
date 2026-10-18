@@ -9,15 +9,23 @@ test("parses a command with its flags", () => {
       "--name",
       "site",
       "--domain",
+      "www.a.test",
+      "--alias",
       "a.test",
-      "--domain",
+      "--alias",
       "b.test",
       "--spa",
       "-y",
     ]),
   ).toMatchObject({
     command: "init",
-    flags: { name: "site", domain: ["a.test", "b.test"], spa: true, yes: true },
+    flags: {
+      name: "site",
+      domain: "www.a.test",
+      alias: ["a.test", "b.test"],
+      spa: true,
+      yes: true,
+    },
   });
 });
 
@@ -26,6 +34,6 @@ test("leaves --spa undefined when neither --spa nor --no-spa is given", () => {
   expect(parseArgs(["init", "--no-spa"]).flags.spa).toBe(false);
 });
 
-test("rejects a flag that takes one value when it is given twice", () => {
-  expect(() => parseArgs(["init", "--region", "DE", "--region", "NY"])).toThrow(/region/);
+test.each(["region", "domain"])("rejects --%s when it is given twice", (flag) => {
+  expect(() => parseArgs(["init", `--${flag}`, "a", `--${flag}`, "b"])).toThrow(flag);
 });

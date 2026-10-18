@@ -4,6 +4,7 @@ import { errorMessage } from "./log.ts";
 
 // Bunny edge rule enums: https://docs.bunny.net/api-reference/core/pull-zone/addupdate-edge-rule
 const REDIRECT = 1;
+const BLOCK_REQUEST = 4;
 const SET_RESPONSE_HEADER = 5;
 const COUNTRY_CODE = 4;
 const MATCH_ALL = 1;
@@ -17,6 +18,7 @@ const SERVED_STATUS = new Map([
   [308, 301],
 ]);
 export const RULE_PREFIX = "orbitpush ";
+export const DISABLED_RULE = `${RULE_PREFIX}disabled`;
 
 type EdgeRuleAction = { ActionType: number; ActionParameter1: string; ActionParameter2: string };
 
@@ -93,6 +95,60 @@ function rule({
 
 function ruleHash(body: Omit<EdgeRule, "Description">) {
   return createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 10);
+}
+
+export function domainRules({
+  name,
+  domain,
+  aliases,
+}: {
+  name: string;
+  domain?: string;
+  aliases: string[];
+}): EdgeRule[] {
+  if (!domain) return [];
+
+  const main = domain.toLowerCase();
+
+  const redirects = aliases.map((alias) =>
+    rule({
+      description: `alias ${alias.toLowerCase()} ${main}`,
+      pattern: toPattern(`https://${alias.toLowerCase()}/*`).pattern,
+      actions: [
+        {
+          ActionType: REDIRECT,
+          ActionParameter1: `https://${main}%{Url.Path}`,
+          ActionParameter2: "301",
+        },
+      ],
+    }),
+  );
+  const noindex = rule({
+    description: `noindex ${name}.b-cdn.net`,
+    pattern: toPattern(`https://${name}.b-cdn.net/*`).pattern,
+    actions: [
+      {
+        ActionType: SET_RESPONSE_HEADER,
+        ActionParameter1: "X-Robots-Tag",
+        ActionParameter2: "noindex",
+      },
+    ],
+  });
+
+  return [...redirects, noindex];
+}
+
+export function disabledRule(): EdgeRule {
+  return {
+    ActionType: BLOCK_REQUEST,
+    ActionParameter1: "",
+    ActionParameter2: "",
+    ExtraActions: [],
+    Triggers: [{ Type: 0, PatternMatchingType: 0, PatternMatches: [toPattern("/*").pattern] }],
+    TriggerMatchingType: 0,
+    Description: DISABLED_RULE,
+    Enabled: true,
+  };
 }
 
 export function parseRedirects(text: string): Parsed {

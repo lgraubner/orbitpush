@@ -132,3 +132,37 @@ test("init refuses to run when orbitpush.json exists and sends nothing to bunny.
   expect(fetch).not.toHaveBeenCalled();
   expect(await readFile("orbitpush.json", "utf8")).toBe("keep me");
 });
+
+test("init writes the domain and its aliases and adds them all to the pull zone", async () => {
+  const { writes, bodies } = fakeBunny();
+
+  await init({ name: "site", domain: "www.example.com", alias: ["example.com"], yes: true }, false);
+
+  const written: unknown = JSON.parse(await readFile("orbitpush.json", "utf8"));
+  expect(written).toMatchObject({ domain: "www.example.com", aliases: ["example.com"] });
+  const added = writes.filter((w) => w.endsWith("/addHostname"));
+  expect(added).toHaveLength(2);
+  expect(bodies["POST https://api.bunny.net/pullzone/2/addHostname"]).toEqual({
+    Hostname: "example.com",
+  });
+});
+
+test("init writes no domain key without a custom domain", async () => {
+  fakeBunny();
+
+  await init({ name: "site", yes: true }, false);
+
+  const written = JSON.parse(await readFile("orbitpush.json", "utf8")) as Record<string, unknown>;
+  expect(written).not.toHaveProperty("domain");
+  expect(written).toMatchObject({ aliases: [] });
+});
+
+test.each([
+  ["without a domain", { alias: ["example.com"] }],
+  ["that repeats the domain", { domain: "www.example.com", alias: ["WWW.example.com"] }],
+])("init rejects an alias %s before sending anything to bunny.net", async (_, flags) => {
+  const { writes } = fakeBunny();
+
+  await expect(init({ name: "site", yes: true, ...flags }, false)).rejects.toThrow(/alias/i);
+  expect(writes).toEqual([]);
+});

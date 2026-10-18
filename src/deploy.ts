@@ -3,11 +3,27 @@ import { openAsBlob } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
-import { api, apiJson, geoZoneFlags, pool, PullZone, StorageZone, storage } from "./bunny.ts";
+import {
+  api,
+  apiJson,
+  geoZoneFlags,
+  getPullZone,
+  pool,
+  purgeCache,
+  StorageZone,
+  storage,
+} from "./bunny.ts";
 import type { Config } from "./config.ts";
 import { isMissing, readIfExists } from "./files.ts";
 import { errorMessage, log } from "./log.ts";
-import { type EdgeRule, parseHeaders, parseRedirects, RULE_PREFIX } from "./rules.ts";
+import {
+  DISABLED_RULE,
+  domainRules,
+  type EdgeRule,
+  parseHeaders,
+  parseRedirects,
+  RULE_PREFIX,
+} from "./rules.ts";
 
 const RULE_FILES = ["_headers", "_redirects"];
 
@@ -20,7 +36,7 @@ export async function deploy(apiKey: string, config: Config) {
   const files = await readOutput(config.outputDir);
   if (!files.has("index.html")) log.warn(`No index.html in ${config.outputDir}`);
 
-  const rules = await readRules(config.outputDir);
+  const rules = [...domainRules(config), ...(await readRules(config.outputDir))];
 
   log.step("Comparing with storage zone");
   const bucket = storage(zone);
@@ -54,8 +70,7 @@ export async function deploy(apiKey: string, config: Config) {
     await pool(stale, 8, (path) => bucket.delete(path));
   }
 
-  log.step("Purging cache");
-  await api(apiKey, { method: "POST", path: `/pullzone/${config.pullZoneId}/purgeCache` });
+  await purgeCache(apiKey, config.pullZoneId);
 }
 
 async function readOutput(dir: string) {
@@ -121,14 +136,11 @@ async function applySettings(
 }
 
 export async function ensureDomains(apiKey: string, config: Config) {
-  const pullZone = await apiJson(apiKey, {
-    schema: PullZone,
-    method: "GET",
-    path: `/pullzone/${config.pullZoneId}`,
-  });
+  const pullZone = await getPullZone(apiKey, config.pullZoneId);
   const cdnHost = `${pullZone.Name}.b-cdn.net`;
 
-  for (const domain of config.domains.map((d) => d.toLowerCase())) {
+  const hostnames = config.domain ? [config.domain, ...config.aliases] : [];
+  for (const domain of hostnames.map((d) => d.toLowerCase())) {
     let hostname = pullZone.Hostnames.find((h) => h.Value.toLowerCase() === domain);
     if (!hostname) {
       await api(apiKey, {
@@ -172,11 +184,11 @@ export async function ensureDomains(apiKey: string, config: Config) {
 }
 
 async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) {
-  const pullZone = await apiJson(apiKey, {
-    schema: PullZone,
-    method: "GET",
-    path: `/pullzone/${pullZoneId}`,
-  });
+  const pullZone = await getPullZone(apiKey, pullZoneId);
+  if (pullZone.EdgeRules.some((r) => r.Description === DISABLED_RULE)) {
+    log.warn("The site is disabled. Run `orbitpush enable` to serve it again.");
+  }
+
   const wanted = new Map<string, EdgeRule & { OrderIndex: number }>();
   rules.forEach((rule, OrderIndex) => {
     if (!wanted.has(rule.Description)) wanted.set(rule.Description, { ...rule, OrderIndex });
@@ -184,7 +196,7 @@ async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) 
 
   const kept = new Map<string, { Guid: string; OrderIndex: number }>();
   const removed = pullZone.EdgeRules.filter((r) => {
-    if (!r.Description?.startsWith(RULE_PREFIX)) return false;
+    if (!r.Description?.startsWith(RULE_PREFIX) || r.Description === DISABLED_RULE) return false;
     if (!wanted.has(r.Description) || kept.has(r.Description)) return true;
 
     kept.set(r.Description, r);

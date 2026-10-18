@@ -1,0 +1,3 @@
+# Keep the disabled state on the pull zone
+
+`orbitpush disable` records the disabled state only as the `orbitpush disabled` edge rule on the pull zone, not as a field in `orbitpush.json`, and `deploy` leaves that rule in place. A config field would be reviewable in git, but a deploy from a branch or CI checkout without it would bring a site back online that was taken down on purpose, and taking a site offline should not wait for a commit. The cost is that the state is invisible in the repository and lives only in bunny.net. Revisit if bunny.net adds a pull zone setting that disables delivery, or if users need disabling to go through review.

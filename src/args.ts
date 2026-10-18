@@ -11,14 +11,15 @@ const Argv = z.object({
   name: z.optional(z.string()),
   dir: z.optional(z.string()),
   region: z.optional(z.string()),
-  domain: z.optional(z.union([z.string(), z.array(z.string())])),
+  domain: z.optional(z.string()),
+  alias: z.optional(z.union([z.string(), z.array(z.string())])),
 });
 
 export function parseArgs(argv: string[]) {
   const result = Argv.safeParse(
     mri(argv, {
       boolean: ["help", "version", "yes", "spa"],
-      string: ["name", "dir", "domain", "region"],
+      string: ["name", "dir", "domain", "alias", "region"],
       alias: { h: "help", v: "version", y: "yes" },
     }),
   );

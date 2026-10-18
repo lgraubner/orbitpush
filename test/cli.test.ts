@@ -75,3 +75,41 @@ test.skipIf(!script)(
   },
   10_000,
 );
+
+test("--help lists disable, enable and destroy", () => {
+  const { stdout } = cli("--help");
+
+  expect(stdout).toMatch(/orbitpush disable/);
+  expect(stdout).toMatch(/orbitpush enable/);
+  expect(stdout).toMatch(/orbitpush destroy/);
+});
+
+test("destroy without --yes outside a terminal exits with 1 and keeps orbitpush.json", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orbitpush-cli-"));
+  const offline = join(cwd, "offline.mjs");
+  writeFileSync(offline, 'globalThis.fetch = () => { throw new Error("offline"); };');
+  writeFileSync(
+    join(cwd, "orbitpush.json"),
+    JSON.stringify({
+      name: "site",
+      outputDir: "dist",
+      spa: false,
+      region: "DE",
+      replicationRegions: [],
+      geoZones: ["EU"],
+      storageZoneId: 1,
+      pullZoneId: 2,
+    }),
+  );
+  const env = { ...process.env, BUNNY_API_KEY: "not-a-key", CI: "1" };
+
+  const result = spawnSync(process.execPath, ["--import", offline, entry, "destroy"], {
+    cwd,
+    encoding: "utf8",
+    env,
+  });
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--yes/);
+  expect(existsSync(join(cwd, "orbitpush.json"))).toBe(true);
+});

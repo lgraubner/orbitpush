@@ -12,7 +12,7 @@ const valid = {
   name: "site",
   outputDir: "dist",
   spa: false,
-  domains: ["www.example.com"],
+  domain: "www.example.com",
   region: "DE",
   replicationRegions: ["NY"],
   geoZones: ["EU", "US"],
@@ -28,11 +28,11 @@ afterEach(() => {
   process.chdir(cwd);
 });
 
-test("reads a valid orbitpush.json", async () => {
+test("reads a valid orbitpush.json written before aliases existed", async () => {
   await writeFile("orbitpush.json", JSON.stringify(valid));
 
   const { $schema: _schema, ...expected } = valid;
-  await expect(readConfig()).resolves.toEqual(expected);
+  await expect(readConfig()).resolves.toEqual({ ...expected, aliases: [] });
 });
 
 test("tells the user to run init when orbitpush.json is missing", async () => {
@@ -75,4 +75,19 @@ test("rejects an empty geoZones list, which would deliver the site nowhere", asy
   await writeFile("orbitpush.json", JSON.stringify({ ...valid, geoZones: [] }));
 
   await expect(readConfig()).rejects.toThrow(/geoZones/);
+});
+
+test("reads aliases next to the domain", async () => {
+  await writeFile("orbitpush.json", JSON.stringify({ ...valid, aliases: ["example.com"] }));
+
+  await expect(readConfig()).resolves.toMatchObject({ aliases: ["example.com"] });
+});
+
+test.each([
+  ["without a domain to redirect to", { domain: undefined, aliases: ["example.com"] }],
+  ["that repeat the domain", { domain: "www.example.com", aliases: ["WWW.example.com"] }],
+])("rejects aliases %s", async (_, fields) => {
+  await writeFile("orbitpush.json", JSON.stringify({ ...valid, ...fields }));
+
+  await expect(readConfig()).rejects.toThrow(/aliases/);
 });

@@ -1,4 +1,5 @@
 import { GEO_ZONES, type GeoZone } from "./config.ts";
+import { log } from "./log.ts";
 import { issues, z } from "./zod.ts";
 
 export const API_KEY_URL = "https://dash.bunny.net/account/api-key";
@@ -67,9 +68,20 @@ export async function api(apiKey: string, { method, path, body }: ApiRequest) {
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(`${method} ${path} failed: ${await errorText(response)}`);
+  if (!response.ok) {
+    throw new ApiError(`${method} ${path} failed: ${await errorText(response)}`, response.status);
+  }
 
   return response;
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
 }
 
 export async function apiJson<T>(
@@ -80,6 +92,15 @@ export async function apiJson<T>(
   const json: unknown = await response.json().catch(() => undefined);
 
   return parseResponse(schema, json, `${request.method} ${request.path}`);
+}
+
+export function getPullZone(apiKey: string, pullZoneId: number) {
+  return apiJson(apiKey, { schema: PullZone, method: "GET", path: `/pullzone/${pullZoneId}` });
+}
+
+export async function purgeCache(apiKey: string, pullZoneId: number) {
+  log.step("Purging cache");
+  await api(apiKey, { method: "POST", path: `/pullzone/${pullZoneId}/purgeCache` });
 }
 
 const STORAGE_AUTH_ATTEMPTS = 7;

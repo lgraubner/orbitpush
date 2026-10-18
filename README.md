@@ -9,20 +9,22 @@ npm run build
 npx orbitpush deploy       # uploads, syncs edge rules, purges the cache
 ```
 
+`orbitpush disable`, `orbitpush enable` and `orbitpush destroy` take a site offline, bring it back, or delete it from bunny.net (see below).
+
 ## `orbitpush init`
 
-Asks for the project name, build output directory, SPA mode, custom domains, the main storage region, replication regions and CDN delivery regions. Then it creates:
+Asks for the project name, build output directory, SPA mode, a custom domain and its aliases, the main storage region, replication regions and CDN delivery regions. Then it creates:
 
 1. a storage zone (name = project name),
 2. a pull zone with the storage zone as its origin (available at `https://<name>.b-cdn.net`),
-3. the custom hostnames, and requests a free SSL certificate for them.
+3. the custom domain and its aliases, and requests a free SSL certificate for each.
 
 For a custom domain, point a `CNAME` record to `<name>.b-cdn.net`. For an apex domain (`example.com`) you need a DNS provider that supports `ALIAS`/CNAME flattening. If DNS is not set up yet, the certificate is requested again on every deploy until it works.
 
 Each prompt can be skipped with a flag. Use `--yes` for non-interactive setup:
 
 ```bash
-npx orbitpush init --name my-site --dir dist --spa --domain www.example.com --region DE --yes
+npx orbitpush init --name my-site --dir dist --spa --domain www.example.com --alias example.com --region DE --yes
 ```
 
 The pull zone and storage zone names are global across bunny.net. If the name is taken, choose another one.
@@ -56,7 +58,8 @@ Commit this file. It never contains the API key.
   "name": "my-site",
   "outputDir": "dist",
   "spa": false,
-  "domains": ["www.example.com"],
+  "domain": "www.example.com",
+  "aliases": ["example.com"],
   "region": "DE",
   "replicationRegions": ["NY"],
   "geoZones": ["EU", "US"],
@@ -67,18 +70,35 @@ Commit this file. It never contains the API key.
 
 Settings are applied on every deploy, so you can change them later:
 
-| Field                | Notes                                                                                   |
-| -------------------- | --------------------------------------------------------------------------------------- |
-| `outputDir`          | Directory that gets deployed.                                                           |
-| `spa`                | `true`: unknown paths without a file extension return `/index.html` with status 200.    |
-| `domains`            | New hostnames are added with SSL. Removed hostnames are **not** removed from bunny.net. |
-| `region`             | Main storage region. Fixed after `init`.                                                |
-| `replicationRegions` | Can only be added. bunny.net does not support removing replication regions.             |
-| `geoZones`           | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`. At least one.                     |
+| Field                | Notes                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| `outputDir`          | Directory that gets deployed.                                                                           |
+| `spa`                | `true`: unknown paths without a file extension return `/index.html` with status 200.                    |
+| `domain`             | Optional. Custom domain, added with SSL. Removing it does **not** remove it from bunny.net.             |
+| `aliases`            | Optional. Hostnames added with SSL that 301-redirect every path and query to `domain`. Need a `domain`. |
+| `region`             | Main storage region. Fixed after `init`.                                                                |
+| `replicationRegions` | Can only be added. bunny.net does not support removing replication regions.                             |
+| `geoZones`           | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`. At least one.                                     |
 
 ### 404 page
 
 If `spa` is `false` and the output contains `404.html`, it is served for missing files. In SPA mode, `index.html` takes this role.
+
+### Domains and search engines
+
+Each hostname in `aliases` redirects to `domain` with status `301`, keeping the path and query string, so `https://example.com/a?b=1` goes to `https://www.example.com/a?b=1`. An alias needs the same DNS record as a domain.
+
+While `domain` is set, responses on `<name>.b-cdn.net` carry `X-Robots-Tag: noindex`, so search engines index the custom domain instead.
+
+Both are edge rules that orbitpush manages, like the ones from the rule files below.
+
+## `orbitpush disable` and `orbitpush enable`
+
+`disable` adds an edge rule named `orbitpush disabled` that blocks every request to the pull zone, then purges the cache. Visitors get bunny.net's `403` page on every hostname. Files, settings and domains stay as they are, and `deploy` keeps working but leaves the block in place and warns about it. `enable` removes the rule and purges the cache again. Both do nothing when the site is already in that state.
+
+## `orbitpush destroy`
+
+Deletes the pull zone (with its hostnames and certificates), then the storage zone with every file in it, then `orbitpush.json`. It asks you to type the project name first; `--yes` skips that and is required without a terminal. A zone that is already gone counts as deleted, so if `destroy` stops halfway, run it again. DNS records you created for your domains are not managed by orbitpush; remove them at your DNS provider.
 
 ## `_headers` and `_redirects`
 

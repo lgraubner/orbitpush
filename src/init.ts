@@ -13,6 +13,7 @@ import {
   geoZoneFlags,
 } from "./bunny.ts";
 import {
+  aliasProblem,
   type Config,
   CONFIG_FILE,
   GEO_ZONES,
@@ -28,7 +29,8 @@ export type InitFlags = {
   name?: string;
   dir?: string;
   spa?: boolean;
-  domain?: string | string[];
+  domain?: string;
+  alias?: string | string[];
   region?: string;
   yes?: boolean;
 };
@@ -64,15 +66,22 @@ export async function init(flags: InitFlags, interactive: boolean) {
   const spa = await ask(flags.spa, false, () =>
     confirm({ message: "Single-page app (serve index.html for unknown paths)?", default: false }),
   );
-  const domainFlag = flags.domain === undefined ? undefined : [flags.domain].flat().join(",");
-  const domains = (
-    await ask(domainFlag, "", () =>
-      input({ message: "Custom domains, comma separated (optional)" }),
-    )
-  )
-    .split(",")
-    .map((d) => d.trim())
-    .filter(Boolean);
+  const domain =
+    (await ask(flags.domain, "", () => input({ message: "Custom domain (optional)" }))).trim() ||
+    undefined;
+  const aliasFlag = flags.alias === undefined ? undefined : [flags.alias].flat().join(",");
+  const aliases = splitList(
+    await ask(aliasFlag, "", () =>
+      domain
+        ? input({
+            message: `Aliases that redirect to ${domain}, comma separated (optional)`,
+            validate: (v) => aliasProblem({ domain, aliases: splitList(v) }) ?? true,
+          })
+        : Promise.resolve(""),
+    ),
+  );
+  const problem = aliasProblem({ domain, aliases });
+  if (problem) throw new Error(`Invalid --alias: ${problem}`);
 
   const regionAnswer = await ask(flags.region, "DE", () =>
     select({ message: "Main storage region", choices: STORAGE_REGIONS, default: "DE" }),
@@ -127,7 +136,8 @@ export async function init(flags: InitFlags, interactive: boolean) {
       name,
       outputDir,
       spa,
-      domains,
+      domain,
+      aliases,
       region,
       replicationRegions,
       geoZones,
@@ -146,6 +156,13 @@ export async function init(flags: InitFlags, interactive: boolean) {
   log.success(`Ready: https://${cdnHost}`);
   if (!envApiKey()) log.detail("Set BUNNY_API_KEY in your environment before deploying.");
   log.detail("Next: build your site, then run `npx orbitpush deploy`");
+}
+
+function splitList(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 async function promptApiKey() {

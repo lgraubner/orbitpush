@@ -6,7 +6,6 @@
     "name",
     "outputDir",
     "spa",
-    "domains",
     "region",
     "replicationRegions",
     "geoZones",
@@ -14,17 +13,31 @@
     "pullZoneId"
   ],
   "properties": {
-    "$schema": { "type": "string" },
-    "name": { "type": "string", "description": "Name of the storage zone and pull zone." },
-    "outputDir": { "type": "string", "description": "Build output directory that gets deployed." },
+    "$schema": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string",
+      "description": "Name of the storage zone and pull zone."
+    },
+    "outputDir": {
+      "type": "string",
+      "description": "Build output directory that gets deployed."
+    },
     "spa": {
       "type": "boolean",
       "description": "Serve index.html with status 200 for unknown paths without a file extension."
     },
-    "domains": {
+    "domain": {
+      "type": "string",
+      "description": "Custom domain. Added with a free SSL certificate on deploy; removing it here does not remove it from bunny.net."
+    },
+    "aliases": {
       "type": "array",
-      "items": { "type": "string" },
-      "description": "Custom hostnames. Added with a free SSL certificate on deploy; removing one here does not remove it from bunny.net."
+      "items": {
+        "type": "string"
+      },
+      "description": "Hostnames, added with a free SSL certificate, that 301-redirect to domain. Requires domain and must not repeat it."
     },
     "region": {
       "enum": ["DE", "UK", "SE", "NY", "LA", "SG", "SYD", "BR", "JH"],
@@ -32,16 +45,24 @@
     },
     "replicationRegions": {
       "type": "array",
-      "items": { "enum": ["DE", "UK", "SE", "NY", "LA", "SG", "SYD", "BR", "JH"] },
+      "items": {
+        "enum": ["DE", "UK", "SE", "NY", "LA", "SG", "SYD", "BR", "JH"]
+      },
       "description": "Storage replication regions. bunny.net does not allow removing them."
     },
     "geoZones": {
       "type": "array",
       "minItems": 1,
-      "items": { "enum": ["EU", "US", "ASIA", "SA", "AF"] },
+      "items": {
+        "enum": ["EU", "US", "ASIA", "SA", "AF"]
+      },
       "description": "CDN delivery regions of the pull zone."
     },
-    "storageZoneId": { "type": "integer" },
-    "pullZoneId": { "type": "integer" }
+    "storageZoneId": {
+      "type": "integer"
+    },
+    "pullZoneId": {
+      "type": "integer"
+    }
   }
 }
