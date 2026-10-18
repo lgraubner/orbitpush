@@ -20,7 +20,7 @@ _Avoid_: dist, build folder
 A bunny.net pull zone rule that matches a URL pattern and redirects or sets response headers. Each redirect line and each `_headers` path block becomes one.
 
 **Managed rule**:
-An edge rule whose description starts with `orbitpush <hash>`. Only managed rules are added or deleted on deploy; rules created in the dashboard are never touched. The hash covers the rule's content, so a changed rule is a new managed rule. Its `OrderIndex` is its position in the rule files, outside the hash, so a moved line is updated in place.
+An edge rule whose description starts with `orbitpush <hash>`. Only managed rules are written or deleted on deploy; rules created in the dashboard are never touched. The hash covers the rule's content, so a changed rule is a new managed rule. Its `OrderIndex` is its position in the rule files, outside the hash. Every deploy rewrites each managed rule still in the files, which undoes dashboard edits to it and moves it to its current position.
 
 **Stale file**:
 A file in the storage zone that is no longer in the output directory. Deleted after the upload, not before.

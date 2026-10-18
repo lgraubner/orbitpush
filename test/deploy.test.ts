@@ -158,6 +158,7 @@ test("deploy uploads changed files, deletes stale ones, syncs managed rules and 
     "POST https://api.bunny.net/storagezone/1",
     "POST https://api.bunny.net/pullzone/2",
     "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
+    "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
     "DELETE https://api.bunny.net/pullzone/2/edgerules/old",
     "DELETE https://storage.bunnycdn.com/site/gone.html",
     "POST https://api.bunny.net/pullzone/2/purgeCache",
@@ -236,7 +237,7 @@ test("deploy starts uploading HTML only after every other upload has finished", 
   expect(uploads.indexOf("done assets/app.css")).toBeLessThan(uploads.indexOf("start 404.html"));
 });
 
-test("deploy creates a rule listed twice once and deletes a duplicate managed rule", async () => {
+test("deploy writes a rule listed twice once and deletes a duplicate managed rule", async () => {
   const dir = await outputDir();
   await writeFile(join(dir, "_redirects"), "/a /b\n/c /d\n/c /d");
   const { writes } = fakeBunny({
@@ -249,6 +250,7 @@ test("deploy creates a rule listed twice once and deletes a duplicate managed ru
   await deploy("key", config(dir));
 
   expect(writes.filter((w) => w.includes("/edgerules/"))).toEqual([
+    "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
     "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
     "DELETE https://api.bunny.net/pullzone/2/edgerules/copy",
   ]);
@@ -349,7 +351,7 @@ test("deploy leaves a domain with certificate and Force SSL alone, matching case
   expect(domainRequests(requests)).toEqual([]);
 });
 
-test("deploy gives each rule its file position as OrderIndex and moves only misplaced rules", async () => {
+test("deploy gives each rule its file position as OrderIndex and rewrites every deployed rule", async () => {
   const dir = await outputDir();
   await writeFile(join(dir, "_redirects"), "/c /d\n/a /b\n/e /f");
   const [c, a, e] = parseRedirects("/c /d\n/a /b\n/e /f").rules;
@@ -365,7 +367,21 @@ test("deploy gives each rule its file position as OrderIndex and moves only misp
   expect(edgeRuleWrites).toEqual([
     { ...c, OrderIndex: 0 },
     { ...a, Guid: "a", OrderIndex: 1 },
+    { ...e, Guid: "e", OrderIndex: 2 },
   ]);
+});
+
+test("deploy restores a managed rule edited in the dashboard when the rule files did not change", async () => {
+  const dir = await outputDir();
+  await writeFile(join(dir, "_redirects"), "/a /b");
+  const [a] = parseRedirects("/a /b").rules;
+  const { edgeRuleWrites } = fakeBunny({
+    edgeRules: [{ Guid: "a", Description: a.Description, OrderIndex: 0 }],
+  });
+
+  await deploy("key", config(dir));
+
+  expect(edgeRuleWrites).toEqual([{ ...a, Guid: "a", OrderIndex: 0 }]);
 });
 
 test("deploy waits for a new storage zone to accept its password", async () => {

@@ -84,7 +84,7 @@ If `spa` is `false` and the output contains `404.html`, it is served for missing
 
 Both files use the [Netlify format](https://docs.netlify.com/manage/routing/redirects/overview/) and are read from the root of the output directory. They are not uploaded. Each redirect and each `_headers` path block becomes one edge rule.
 
-Rules created by orbitpush have a description that starts with `orbitpush <hash>`. On deploy, new or changed rules are added and rules that no longer exist in the files are deleted. Edge rules you create yourself in the dashboard are never touched.
+Rules created by orbitpush have a description that starts with `orbitpush <hash>`. On deploy, new or changed rules are added, rules that no longer exist in the files are deleted, and every other orbitpush rule is rewritten from the files, so edits made to it in the dashboard are undone. Edge rules you create yourself in the dashboard are never touched. To take over an orbitpush rule, remove the `orbitpush` prefix from its description; the next deploy then adds a fresh copy unless you also remove the line from the files.
 
 Unsupported lines print a warning and are skipped. They do not fail the deploy.
 

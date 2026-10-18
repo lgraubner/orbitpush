@@ -190,19 +190,16 @@ async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) 
     kept.set(r.Description, r);
     return false;
   });
-  const added = [...wanted.values()].filter((r) => !kept.has(r.Description));
-  const moved = [...wanted.values()].flatMap((rule) => {
+  const writes = [...wanted.values()].map((rule) => {
     const deployed = kept.get(rule.Description);
-    return deployed && deployed.OrderIndex !== rule.OrderIndex
-      ? [{ ...rule, Guid: deployed.Guid }]
-      : [];
+    return deployed ? { ...rule, Guid: deployed.Guid } : rule;
   });
-  if (!added.length && !moved.length && !removed.length) return;
+  if (!writes.length && !removed.length) return;
 
-  const movedNote = moved.length ? ` ~${moved.length}` : "";
-  log.step(`Updating edge rules (+${added.length}${movedNote} -${removed.length})`);
+  const added = writes.length - kept.size;
+  log.step(`Updating edge rules (+${added} ~${kept.size} -${removed.length})`);
 
-  for (const rule of [...added, ...moved]) {
+  for (const rule of writes) {
     await api(apiKey, {
       method: "POST",
       path: `/pullzone/${pullZoneId}/edgerules/addOrUpdate`,
