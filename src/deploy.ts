@@ -177,21 +177,32 @@ async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) 
     method: "GET",
     path: `/pullzone/${pullZoneId}`,
   });
-  const wanted = new Map(rules.map((r) => [r.Description, r]));
-  const kept = new Set<string>();
+  const wanted = new Map<string, EdgeRule & { OrderIndex: number }>();
+  rules.forEach((rule, OrderIndex) => {
+    if (!wanted.has(rule.Description)) wanted.set(rule.Description, { ...rule, OrderIndex });
+  });
+
+  const kept = new Map<string, { Guid: string; OrderIndex: number }>();
   const removed = pullZone.EdgeRules.filter((r) => {
     if (!r.Description?.startsWith(RULE_PREFIX)) return false;
     if (!wanted.has(r.Description) || kept.has(r.Description)) return true;
 
-    kept.add(r.Description);
+    kept.set(r.Description, r);
     return false;
   });
   const added = [...wanted.values()].filter((r) => !kept.has(r.Description));
-  if (!added.length && !removed.length) return;
+  const moved = [...wanted.values()].flatMap((rule) => {
+    const deployed = kept.get(rule.Description);
+    return deployed && deployed.OrderIndex !== rule.OrderIndex
+      ? [{ ...rule, Guid: deployed.Guid }]
+      : [];
+  });
+  if (!added.length && !moved.length && !removed.length) return;
 
-  log.step(`Updating edge rules (+${added.length} -${removed.length})`);
+  const movedNote = moved.length ? ` ~${moved.length}` : "";
+  log.step(`Updating edge rules (+${added.length}${movedNote} -${removed.length})`);
 
-  for (const rule of added) {
+  for (const rule of [...added, ...moved]) {
     await api(apiKey, {
       method: "POST",
       path: `/pullzone/${pullZoneId}/edgerules/addOrUpdate`,

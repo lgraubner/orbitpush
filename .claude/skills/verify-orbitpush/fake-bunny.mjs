@@ -33,6 +33,7 @@ if (process.argv[2] === "summary") {
         ActionType: rule.ActionType,
         ActionParameter1: rule.ActionParameter1,
         ActionParameter2: rule.ActionParameter2,
+        OrderIndex: rule.OrderIndex,
         Pattern: rule.Triggers?.[0]?.PatternMatches?.[0],
         ExtraActions: rule.ExtraActions?.length ?? 0,
       })),
@@ -202,7 +203,11 @@ function api(state, url, method, headers, body) {
     }
 
     if (action === "edgerules" && guid === "addOrUpdate" && method === "POST") {
-      zone.EdgeRules.push({ ...json, Guid: json.Guid ?? randomUUID() });
+      // bunny.net updates the rule with a known Guid in place and defaults OrderIndex to 0
+      const rule = { OrderIndex: 0, ...json, Guid: json.Guid ?? randomUUID() };
+      const index = zone.EdgeRules.findIndex((r) => r.Guid === rule.Guid);
+      if (index === -1) zone.EdgeRules.push(rule);
+      else zone.EdgeRules[index] = rule;
       return reply(201);
     }
 

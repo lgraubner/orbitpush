@@ -94,14 +94,17 @@ Unsupported lines print a warning and are skipped. They do not fail the deploy.
 # _redirects
 /old            /new
 /blog/:year/:id /posts/:year/:id   302
-/docs/*         https://docs.example.com/:splat   308
+/docs/*         https://docs.example.com/:splat   302
 https://example.com/*  https://www.example.com/:splat  301!
 ```
 
-- Status codes `301` (default), `302`, `303`, `307`, `308`, with or without `!`
+- Status codes `301` (default) and `302`, with or without `!`. bunny.net serves no other redirect code, so `303` and `307` are sent as `302` and `308` as `301`, with a warning
 - Placeholders (`:name`) as whole path segments, and `*` / `:splat` as the last segment
 - Absolute source URLs to redirect a single hostname
+- `Country=` conditions with two-letter country codes (`/ /uk 302 Country=gb,ie`). Several `Country=` conditions on one line match any of their countries
 - Matching with and without a trailing slash
+- Rule order: if several redirects match a URL, the first one in the file wins, as on Netlify
+- A relative target (`/new`) redirects on the hostname that was requested
 
 ```
 # _headers
@@ -113,14 +116,14 @@ https://example.com/*  https://www.example.com/:splat  301!
 
 - Any response header, placeholders and `*` work like in `_redirects`
 - Repeated headers are joined with `, `
+- If several path blocks set the same header for a URL, the last block in the file wins, as on Netlify
 
 ### Not supported
 
 - **Rewrites and proxies (status `200`).** A storage zone can't serve another path internally. `/* /index.html 200` is recognised; set `"spa": true` instead.
 - **Custom status pages (`404`, `410`, …)** for individual paths. Only the global 404 page is supported.
 - **Shadowing.** On Netlify, a redirect without `!` only applies if no file exists at the path. Edge rules run before the storage zone is asked, so every redirect behaves as if it had `!`.
-- **Rule order.** If several redirects match the same URL, bunny.net, not the order in the file, decides which one wins. Don't use overlapping redirects.
-- **Query parameter matching** (`/store id=:id /product/:id`) and **conditions** (`Country=`, `Language=`, `Role=`, `Cookie=`).
+- **Query parameter matching** (`/store id=:id /product/:id`) and the conditions `Language=`, `Role=` and `Cookie=`.
 - **Query strings are not passed on to redirect targets.**
 - **`*` in the middle of a path or inside a segment** (`/a/*/b`, `/file-*.js`).
 - **Placeholders inside a segment** (`/a-:id`). Placeholders must be a whole segment.

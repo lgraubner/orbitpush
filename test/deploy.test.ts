@@ -13,6 +13,7 @@ const sha = (text: string) => createHash("sha256").update(text).digest("hex").to
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 function config(outputDir: string): Config {
@@ -34,24 +35,28 @@ const kept = parseRedirects("/a /b").rules[0].Description;
 function fakeBunny({
   storageZone = { Id: 1, Name: "site", Password: "pw", StorageHostname: "storage.bunnycdn.com" },
   edgeRules = [
-    { Guid: "keep", Description: kept },
-    { Guid: "old", Description: "orbitpush 0000000000 /x /y 301" },
-    { Guid: "mine", Description: "created in dashboard" },
+    { Guid: "keep", Description: kept, OrderIndex: 0 },
+    { Guid: "old", Description: "orbitpush 0000000000 /x /y 301", OrderIndex: 0 },
+    { Guid: "mine", Description: "created in dashboard", OrderIndex: 0 },
   ],
   slowAssets = false,
   hostnames = [],
   certificateFails = false,
+  storageUnauthorized = 0,
 }: {
   storageZone?: Record<string, unknown>;
   edgeRules?: Record<string, unknown>[];
   slowAssets?: boolean;
   hostnames?: { Value: string; HasCertificate: boolean; ForceSSL: boolean }[];
   certificateFails?: boolean;
+  storageUnauthorized?: number;
 } = {}) {
+  let unauthorized = storageUnauthorized;
   const requests: string[] = [];
   const writes: string[] = [];
   const uploads: string[] = [];
   const bodies: Record<string, unknown> = {};
+  const edgeRuleWrites: unknown[] = [];
 
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init = {}) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -61,6 +66,9 @@ function fakeBunny({
     requests.push(`${method} ${url}`);
     if (method !== "GET") writes.push(`${method} ${url}`);
     if (typeof init.body === "string") bodies[`${method} ${url}`] = JSON.parse(init.body);
+    if (url.endsWith("/edgerules/addOrUpdate") && typeof init.body === "string") {
+      edgeRuleWrites.push(JSON.parse(init.body));
+    }
 
     if (method === "PUT") {
       const path = url.replace("https://storage.bunnycdn.com/site/", "");
@@ -84,6 +92,11 @@ function fakeBunny({
       });
     }
 
+    if (url.startsWith("https://storage.bunnycdn.com/") && unauthorized > 0) {
+      unauthorized--;
+      return new Response("Unauthorized", { status: 401 });
+    }
+
     if (url === "https://storage.bunnycdn.com/site/" && method === "GET") {
       return json([
         { ObjectName: "assets", IsDirectory: true, Checksum: null },
@@ -105,7 +118,21 @@ function fakeBunny({
     return new Response(null, { status: 201 });
   });
 
-  return { requests, writes, bodies, uploads };
+  return { requests, writes, bodies, uploads, edgeRuleWrites };
+}
+
+async function settleWithFakeTimers<T>(promise: Promise<T>) {
+  let settled = false;
+  void promise.then(
+    () => (settled = true),
+    () => (settled = true),
+  );
+  while (!settled) {
+    await new Promise((resolve) => setImmediate(resolve));
+    await vi.advanceTimersByTimeAsync(1000);
+  }
+
+  return promise;
 }
 
 async function outputDir() {
@@ -214,8 +241,8 @@ test("deploy creates a rule listed twice once and deletes a duplicate managed ru
   await writeFile(join(dir, "_redirects"), "/a /b\n/c /d\n/c /d");
   const { writes } = fakeBunny({
     edgeRules: [
-      { Guid: "keep", Description: kept },
-      { Guid: "copy", Description: kept },
+      { Guid: "keep", Description: kept, OrderIndex: 0 },
+      { Guid: "copy", Description: kept, OrderIndex: 0 },
     ],
   });
 
@@ -320,4 +347,45 @@ test("deploy leaves a domain with certificate and Force SSL alone, matching case
   await deploy("key", { ...config(dir), domains: ["WWW.Example.com"] });
 
   expect(domainRequests(requests)).toEqual([]);
+});
+
+test("deploy gives each rule its file position as OrderIndex and moves only misplaced rules", async () => {
+  const dir = await outputDir();
+  await writeFile(join(dir, "_redirects"), "/c /d\n/a /b\n/e /f");
+  const [c, a, e] = parseRedirects("/c /d\n/a /b\n/e /f").rules;
+  const { edgeRuleWrites } = fakeBunny({
+    edgeRules: [
+      { Guid: "a", Description: a.Description, OrderIndex: 0 },
+      { Guid: "e", Description: e.Description, OrderIndex: 2 },
+    ],
+  });
+
+  await deploy("key", config(dir));
+
+  expect(edgeRuleWrites).toEqual([
+    { ...c, OrderIndex: 0 },
+    { ...a, Guid: "a", OrderIndex: 1 },
+  ]);
+});
+
+test("deploy waits for a new storage zone to accept its password", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout"] });
+  const dir = await outputDir();
+  const { writes } = fakeBunny({ storageUnauthorized: 2 });
+
+  await settleWithFakeTimers(deploy("key", config(dir)));
+
+  expect(writes).toContain("PUT https://storage.bunnycdn.com/site/index.html");
+  expect(writes.at(-1)).toBe("POST https://api.bunny.net/pullzone/2/purgeCache");
+});
+
+test("deploy fails without writing when the storage zone keeps rejecting its password", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout"] });
+  const dir = await outputDir();
+  const { writes } = fakeBunny({ storageUnauthorized: Infinity });
+
+  const error = await settleWithFakeTimers(deploy("key", config(dir)).catch((e: unknown) => e));
+
+  expect(String(error)).toMatch(/HTTP 401/);
+  expect(writes).toEqual([]);
 });

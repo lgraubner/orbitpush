@@ -5,15 +5,27 @@ import { errorMessage } from "./log.ts";
 // Bunny edge rule enums: https://docs.bunny.net/api-reference/core/pull-zone/addupdate-edge-rule
 const REDIRECT = 1;
 const SET_RESPONSE_HEADER = 5;
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const COUNTRY_CODE = 4;
+const MATCH_ALL = 1;
+const COUNTRY_CONDITION = /^Country=([a-z]{2}(?:,[a-z]{2})*)$/i;
+// bunny.net serves only 301 and 302: it rejects 303 and serves 308 as 301
+const SERVED_STATUS = new Map([
+  [301, 301],
+  [302, 302],
+  [303, 302],
+  [307, 302],
+  [308, 301],
+]);
 export const RULE_PREFIX = "orbitpush ";
 
 type EdgeRuleAction = { ActionType: number; ActionParameter1: string; ActionParameter2: string };
 
+type Trigger = { Type: 0 | typeof COUNTRY_CODE; PatternMatchingType: 0; PatternMatches: string[] };
+
 export type EdgeRule = EdgeRuleAction & {
   ExtraActions: EdgeRuleAction[];
-  Triggers: { Type: 0; PatternMatchingType: 0; PatternMatches: string[] }[];
-  TriggerMatchingType: 0;
+  Triggers: Trigger[];
+  TriggerMatchingType: 0 | typeof MATCH_ALL;
   Description: string;
   Enabled: true;
 };
@@ -60,17 +72,19 @@ export function toPattern(from: string) {
 function rule({
   description,
   pattern,
+  conditions = [],
   actions: [first, ...extra],
 }: {
   description: string;
   pattern: string;
+  conditions?: Trigger[];
   actions: [EdgeRuleAction, ...EdgeRuleAction[]];
 }): EdgeRule {
   const body = {
     ...first,
     ExtraActions: extra,
-    Triggers: [{ Type: 0, PatternMatchingType: 0, PatternMatches: [pattern] }],
-    TriggerMatchingType: 0,
+    Triggers: [{ Type: 0, PatternMatchingType: 0, PatternMatches: [pattern] }, ...conditions],
+    TriggerMatchingType: conditions.length ? MATCH_ALL : 0,
     Enabled: true,
   } satisfies Omit<EdgeRule, "Description">;
 
@@ -90,18 +104,30 @@ export function parseRedirects(text: string): Parsed {
     const tokens = line.split(/\s+/);
     if (tokens.length < 2) return skip("missing target");
 
-    const [from, to, statusToken = "301", ...rest] = tokens;
+    const [from, to, ...rest] = tokens;
     if (/^[^/]*=/.test(to)) return skip("query parameter matching is not supported");
-    if (rest.length) return skip("conditions are not supported");
+
+    const [statusToken, conditions] = /^\d/.test(rest[0] ?? "")
+      ? [rest[0], rest.slice(1)]
+      : ["301", rest];
+    const unsupported = conditions.find((condition) => !COUNTRY_CONDITION.test(condition));
+    if (unsupported) return skip(`condition "${unsupported}" is not supported`);
+
+    const countries = [
+      ...new Set(
+        conditions.flatMap((condition) =>
+          condition.slice("Country=".length).toUpperCase().split(","),
+        ),
+      ),
+    ];
 
     const status = Number(statusToken.replace(/!$/, ""));
     if (status === 200 && from === "/*" && to === "/index.html") {
       return skip('set "spa": true in orbitpush.json instead');
     }
 
-    if (!REDIRECT_STATUSES.has(status)) {
-      return skip(`status ${statusToken} is not supported, only redirects`);
-    }
+    const served = SERVED_STATUS.get(status);
+    if (!served) return skip(`status ${statusToken} is not supported, only redirects`);
 
     try {
       const { pattern, params } = toPattern(from);
@@ -113,15 +139,23 @@ export function parseRedirects(text: string): Parsed {
 
         return name === "splat" ? `%{Path.${index}-}` : `%{Path.${index}}`;
       });
+      // bunny.net rejects a relative redirect target as "not a valid URL"
+      const absolute = target.startsWith("/") ? `https://%{Url.Hostname}${target}` : target;
       rules.push(
         rule({
-          description: `${from} ${to} ${status}`,
+          description: [from, to, served, ...conditions].join(" "),
           pattern,
+          conditions: countries.length
+            ? [{ Type: COUNTRY_CODE, PatternMatchingType: 0, PatternMatches: countries }]
+            : [],
           actions: [
-            { ActionType: REDIRECT, ActionParameter1: target, ActionParameter2: String(status) },
+            { ActionType: REDIRECT, ActionParameter1: absolute, ActionParameter2: String(served) },
           ],
         }),
       );
+      if (served !== status) {
+        warnings.push(`_redirects:${n} status ${status} is sent as ${served}: ${line}`);
+      }
     } catch (error) {
       skip(errorMessage(error));
     }

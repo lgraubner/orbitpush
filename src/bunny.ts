@@ -9,7 +9,9 @@ export const PullZone = z.object({
   Hostnames: z.array(
     z.object({ Value: z.string(), HasCertificate: z.boolean(), ForceSSL: z.boolean() }),
   ),
-  EdgeRules: z.array(z.object({ Guid: z.string(), Description: z.nullable(z.string()) })),
+  EdgeRules: z.array(
+    z.object({ Guid: z.string(), Description: z.nullable(z.string()), OrderIndex: z.int() }),
+  ),
 });
 
 export type PullZone = z.infer<typeof PullZone>;
@@ -80,6 +82,9 @@ export async function apiJson<T>(
   return parseResponse(schema, json, `${request.method} ${request.path}`);
 }
 
+const STORAGE_AUTH_ATTEMPTS = 7;
+const STORAGE_AUTH_DELAY_MS = 5000;
+
 export function storage(zone: StorageZone) {
   const base = `https://${zone.StorageHostname}/${encodeURIComponent(zone.Name)}/`;
   const url = (path: string) => base + path.split("/").map(encodeURIComponent).join("/");
@@ -88,14 +93,22 @@ export function storage(zone: StorageZone) {
     path: string,
     init: { body?: Blob; headers?: Record<string, string> } = {},
   ) => {
-    const response = await fetch(url(path), {
-      ...init,
-      method,
-      headers: { AccessKey: zone.Password, ...init.headers },
-    });
-    if (!response.ok) throw new Error(`${method} /${path} failed: ${await errorText(response)}`);
+    for (let attempt = 1; ; attempt++) {
+      const response = await fetch(url(path), {
+        ...init,
+        method,
+        headers: { AccessKey: zone.Password, ...init.headers },
+      });
+      // bunny.net rejects a new storage zone's password for a few seconds after it is created
+      if (response.status === 401 && attempt < STORAGE_AUTH_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, STORAGE_AUTH_DELAY_MS));
+        continue;
+      }
 
-    return response;
+      if (!response.ok) throw new Error(`${method} /${path} failed: ${await errorText(response)}`);
+
+      return response;
+    }
   };
 
   return {
