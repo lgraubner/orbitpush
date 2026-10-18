@@ -1,6 +1,5 @@
-import * as z from "zod/mini";
-
 import { GEO_ZONES, type GeoZone } from "./config.ts";
+import { z } from "./zod.ts";
 
 export const API_KEY_URL = "https://dash.bunny.net/account/api-key";
 
@@ -54,7 +53,9 @@ export function geoZoneFlags(geoZones: GeoZone[]) {
   );
 }
 
-export async function api(apiKey: string, method: string, path: string, body?: unknown) {
+type ApiRequest = { method: "GET" | "POST" | "DELETE"; path: string; body?: unknown };
+
+export async function api(apiKey: string, { method, path, body }: ApiRequest) {
   const response = await fetch(`https://api.bunny.net${path}`, {
     method,
     headers: {
@@ -70,15 +71,13 @@ export async function api(apiKey: string, method: string, path: string, body?: u
 }
 
 export async function apiJson<T>(
-  schema: z.ZodMiniType<T>,
   apiKey: string,
-  method: string,
-  path: string,
-  body?: unknown,
+  { schema, ...request }: ApiRequest & { schema: z.ZodMiniType<T> },
 ) {
-  const response = await api(apiKey, method, path, body);
+  const response = await api(apiKey, request);
+  const json: unknown = await response.json().catch(() => undefined);
 
-  return parseResponse(schema, await response.json().catch(() => undefined), `${method} ${path}`);
+  return parseResponse(schema, json, `${request.method} ${request.path}`);
 }
 
 export function storage(zone: StorageZone) {
@@ -100,7 +99,7 @@ export function storage(zone: StorageZone) {
   };
 
   return {
-    put: (path: string, data: Blob, checksum: string) =>
+    put: ({ path, data, checksum }: { path: string; data: Blob; checksum: string }) =>
       request("PUT", path, { body: data, headers: { Checksum: checksum.toUpperCase() } }),
     delete: (path: string) => request("DELETE", path),
     async list(dir = ""): Promise<Map<string, string>> {

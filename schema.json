@@ -37,6 +37,7 @@
     },
     "geoZones": {
       "type": "array",
+      "minItems": 1,
       "items": { "enum": ["EU", "US", "ASIA", "SA", "AF"] },
       "description": "CDN delivery regions of the pull zone."
     },

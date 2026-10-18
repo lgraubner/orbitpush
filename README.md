@@ -74,7 +74,7 @@ Settings are applied on every deploy, so you can change them later:
 | `domains`            | New hostnames are added with SSL. Removed hostnames are **not** removed from bunny.net. |
 | `region`             | Main storage region. Fixed after `init`.                                                |
 | `replicationRegions` | Can only be added. bunny.net does not support removing replication regions.             |
-| `geoZones`           | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`.                                   |
+| `geoZones`           | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`. At least one.                     |
 
 ### 404 page
 

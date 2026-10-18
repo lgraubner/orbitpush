@@ -95,22 +95,32 @@ export async function init(flags: InitFlags, interactive: boolean) {
     : ["EU", "US"];
 
   log.step(`Creating storage zone ${name}`);
-  const storageZone = await apiJson(CreatedZone, apiKey, "POST", "/storagezone", {
-    Name: name,
-    Region: region,
-    ReplicationRegions: replicationRegions,
-    ZoneTier: 0,
+  const storageZone = await apiJson(apiKey, {
+    schema: CreatedZone,
+    method: "POST",
+    path: "/storagezone",
+    body: {
+      Name: name,
+      Region: region,
+      ReplicationRegions: replicationRegions,
+      ZoneTier: 0,
+    },
   });
 
   let pullZone: CreatedZone | undefined;
   let config: Config;
   try {
     log.step(`Creating pull zone ${name}`);
-    pullZone = await apiJson(CreatedZone, apiKey, "POST", "/pullzone", {
-      Name: name,
-      OriginType: 2,
-      StorageZoneId: storageZone.Id,
-      ...geoZoneFlags(geoZones),
+    pullZone = await apiJson(apiKey, {
+      schema: CreatedZone,
+      method: "POST",
+      path: "/pullzone",
+      body: {
+        Name: name,
+        OriginType: 2,
+        StorageZoneId: storageZone.Id,
+        ...geoZoneFlags(geoZones),
+      },
     });
 
     config = {
@@ -126,7 +136,7 @@ export async function init(flags: InitFlags, interactive: boolean) {
     };
     await writeConfig(config);
   } catch (error) {
-    await deleteNewZones(apiKey, name, storageZone, pullZone);
+    await deleteNewZones(apiKey, { name, storageZone, pullZone });
     throw error;
   }
 
@@ -146,12 +156,14 @@ async function promptApiKey() {
 
 async function deleteNewZones(
   apiKey: string,
-  name: string,
-  storageZone: CreatedZone,
-  pullZone: CreatedZone | undefined,
+  {
+    name,
+    storageZone,
+    pullZone,
+  }: { name: string; storageZone: CreatedZone; pullZone: CreatedZone | undefined },
 ) {
   const remove = (path: string, label: string) =>
-    api(apiKey, "DELETE", path).catch((error: unknown) =>
+    api(apiKey, { method: "DELETE", path }).catch((error: unknown) =>
       log.warn(
         `Could not delete ${label}. Delete it in the bunny.net dashboard. ${errorMessage(error)}`,
       ),

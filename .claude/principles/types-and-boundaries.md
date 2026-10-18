@@ -22,6 +22,7 @@ Boundaries: environment, network input (HTTP, WebSocket), queue payloads, extern
 
 ## In this repo
 
+- `parseArgs()` in `src/args.ts` parses the `mri` output, which is typed as `any`, so no flag reaches `init` unchecked.
 - `readConfig()` in `src/config.ts` parses `orbitpush.json` with a `zod/mini` schema, and `Config` is `z.infer` of it. Unknown keys such as `$schema` are dropped.
 - `Region` is derived from `STORAGE_REGIONS` and is the only place the region rule lives: `readConfig()` and `init()` both parse through it.
 - bunny.net responses are parsed where they enter: `apiJson()` and `storage().list()` in `src/bunny.ts` take a schema and throw `bunny.net returned an unexpected response for ...` before any write follows.

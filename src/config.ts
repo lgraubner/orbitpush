@@ -1,13 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 
-import en from "zod/v4/locales/en.js";
-import * as z from "zod/mini";
-
 import { isMissing } from "./files.ts";
 import { errorMessage } from "./log.ts";
-
-// zod/mini ships without error messages, so its issues would all read "Invalid input"
-z.config(en());
+import { z } from "./zod.ts";
 
 export const CONFIG_FILE = "orbitpush.json";
 export const SCHEMA_URL = "https://unpkg.com/orbitpush/schema.json";
@@ -27,7 +22,7 @@ const ConfigSchema = z.object({
   domains: z.array(z.string()),
   region: Region,
   replicationRegions: z.array(Region),
-  geoZones: z.array(z.enum(GEO_ZONES)),
+  geoZones: z.array(z.enum(GEO_ZONES)).check(z.minLength(1)),
   storageZoneId: z.int(),
   pullZoneId: z.int(),
 });

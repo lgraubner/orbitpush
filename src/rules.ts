@@ -8,11 +8,10 @@ const SET_RESPONSE_HEADER = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 export const RULE_PREFIX = "orbitpush ";
 
-export type EdgeRule = {
-  ActionType: number;
-  ActionParameter1: string;
-  ActionParameter2: string;
-  ExtraActions: { ActionType: number; ActionParameter1: string; ActionParameter2: string }[];
+type EdgeRuleAction = { ActionType: number; ActionParameter1: string; ActionParameter2: string };
+
+export type EdgeRule = EdgeRuleAction & {
+  ExtraActions: EdgeRuleAction[];
   Triggers: { Type: 0; PatternMatchingType: 0; PatternMatches: string[] }[];
   TriggerMatchingType: 0;
   Description: string;
@@ -58,19 +57,22 @@ export function toPattern(from: string) {
   return { pattern: `pattern:^https?://${hostPattern}${pattern}$`, params };
 }
 
-function rule(
-  description: string,
-  pattern: string,
-  actions: { ActionType: number; ActionParameter1: string; ActionParameter2: string }[],
-): EdgeRule {
-  const [first, ...extra] = actions;
+function rule({
+  description,
+  pattern,
+  actions: [first, ...extra],
+}: {
+  description: string;
+  pattern: string;
+  actions: [EdgeRuleAction, ...EdgeRuleAction[]];
+}): EdgeRule {
   const body = {
     ...first,
     ExtraActions: extra,
-    Triggers: [{ Type: 0 as const, PatternMatchingType: 0 as const, PatternMatches: [pattern] }],
-    TriggerMatchingType: 0 as const,
-    Enabled: true as const,
-  };
+    Triggers: [{ Type: 0, PatternMatchingType: 0, PatternMatches: [pattern] }],
+    TriggerMatchingType: 0,
+    Enabled: true,
+  } satisfies Omit<EdgeRule, "Description">;
 
   return { ...body, Description: `${RULE_PREFIX}${ruleHash(body)} ${description}`.slice(0, 255) };
 }
@@ -112,9 +114,13 @@ export function parseRedirects(text: string): Parsed {
         return name === "splat" ? `%{Path.${index}-}` : `%{Path.${index}}`;
       });
       rules.push(
-        rule(`${from} ${to} ${status}`, pattern, [
-          { ActionType: REDIRECT, ActionParameter1: target, ActionParameter2: String(status) },
-        ]),
+        rule({
+          description: `${from} ${to} ${status}`,
+          pattern,
+          actions: [
+            { ActionType: REDIRECT, ActionParameter1: target, ActionParameter2: String(status) },
+          ],
+        }),
       );
     } catch (error) {
       skip(errorMessage(error));
@@ -148,16 +154,16 @@ export function parseHeaders(text: string): Parsed {
   }
 
   for (const { n, path, headers } of blocks) {
-    if (!headers.size) continue;
+    const actions = [...headers].map(([name, values]) => ({
+      ActionType: SET_RESPONSE_HEADER,
+      ActionParameter1: name,
+      ActionParameter2: values.join(", "),
+    }));
+    if (!isNonEmpty(actions)) continue;
 
     try {
       const { pattern } = toPattern(path);
-      const actions = [...headers].map(([name, values]) => ({
-        ActionType: SET_RESPONSE_HEADER,
-        ActionParameter1: name,
-        ActionParameter2: values.join(", "),
-      }));
-      rules.push(rule(`headers ${path}`, pattern, actions));
+      rules.push(rule({ description: `headers ${path}`, pattern, actions }));
     } catch (error) {
       warnings.push(`_headers:${n} skipped (${errorMessage(error)}): ${path}`);
     }
@@ -171,4 +177,8 @@ function lines(text: string): [number, string, boolean][] {
     .split(/\r?\n/)
     .map((raw, i): [number, string, boolean] => [i + 1, raw.trim(), /^\s/.test(raw)])
     .filter(([, line]) => line && !line.startsWith("#"));
+}
+
+function isNonEmpty<T>(items: T[]): items is [T, ...T[]] {
+  return items.length > 0;
 }

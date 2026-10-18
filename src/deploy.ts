@@ -12,7 +12,11 @@ import { type EdgeRule, parseHeaders, parseRedirects, RULE_PREFIX } from "./rule
 const RULE_FILES = ["_headers", "_redirects"];
 
 export async function deploy(apiKey: string, config: Config) {
-  const zone = await apiJson(StorageZone, apiKey, "GET", `/storagezone/${config.storageZoneId}`);
+  const zone = await apiJson(apiKey, {
+    schema: StorageZone,
+    method: "GET",
+    path: `/storagezone/${config.storageZoneId}`,
+  });
   const files = await readOutput(config.outputDir);
   if (!files.has("index.html")) log.warn(`No index.html in ${config.outputDir}`);
 
@@ -29,11 +33,11 @@ export async function deploy(apiKey: string, config: Config) {
 
   log.step(`Uploading ${changed.length} of ${files.size} files`);
   await pool(changed, 8, async ([path, file]) => {
-    await bucket.put(path, await openAsBlob(file.absolute), file.checksum);
+    await bucket.put({ path, data: await openAsBlob(file.absolute), checksum: file.checksum });
     log.detail(path);
   });
 
-  await applySettings(apiKey, config, files.has("404.html"));
+  await applySettings(apiKey, { config, has404: files.has("404.html") });
   await syncRules(apiKey, config.pullZoneId, rules);
 
   if (stale.length) {
@@ -42,7 +46,7 @@ export async function deploy(apiKey: string, config: Config) {
   }
 
   log.step("Purging cache");
-  await api(apiKey, "POST", `/pullzone/${config.pullZoneId}/purgeCache`);
+  await api(apiKey, { method: "POST", path: `/pullzone/${config.pullZoneId}/purgeCache` });
 }
 
 async function readOutput(dir: string) {
@@ -88,31 +92,53 @@ async function readRules(dir: string) {
   return [...redirects.rules, ...headers.rules];
 }
 
-export async function applySettings(apiKey: string, config: Config, has404: boolean) {
+async function applySettings(
+  apiKey: string,
+  { config, has404 }: { config: Config; has404: boolean },
+) {
   log.step("Applying settings");
-  await api(apiKey, "POST", `/storagezone/${config.storageZoneId}`, {
-    ReplicationRegions: config.replicationRegions.filter((region) => region !== config.region),
-    Rewrite404To200: config.spa,
-    Custom404FilePath: config.spa ? "/index.html" : has404 ? "/404.html" : "",
+  await api(apiKey, {
+    method: "POST",
+    path: `/storagezone/${config.storageZoneId}`,
+    body: {
+      ReplicationRegions: config.replicationRegions.filter((region) => region !== config.region),
+      Rewrite404To200: config.spa,
+      Custom404FilePath: config.spa ? "/index.html" : has404 ? "/404.html" : "",
+    },
   });
-  await api(apiKey, "POST", `/pullzone/${config.pullZoneId}`, geoZoneFlags(config.geoZones));
+  await api(apiKey, {
+    method: "POST",
+    path: `/pullzone/${config.pullZoneId}`,
+    body: geoZoneFlags(config.geoZones),
+  });
   await ensureDomains(apiKey, config);
 }
 
 export async function ensureDomains(apiKey: string, config: Config) {
-  const pullZone = await apiJson(PullZone, apiKey, "GET", `/pullzone/${config.pullZoneId}`);
+  const pullZone = await apiJson(apiKey, {
+    schema: PullZone,
+    method: "GET",
+    path: `/pullzone/${config.pullZoneId}`,
+  });
   const cdnHost = `${pullZone.Name}.b-cdn.net`;
 
   for (const domain of config.domains.map((d) => d.toLowerCase())) {
     let hostname = pullZone.Hostnames.find((h) => h.Value.toLowerCase() === domain);
     if (!hostname) {
-      await api(apiKey, "POST", `/pullzone/${config.pullZoneId}/addHostname`, { Hostname: domain });
+      await api(apiKey, {
+        method: "POST",
+        path: `/pullzone/${config.pullZoneId}/addHostname`,
+        body: { Hostname: domain },
+      });
       hostname = { Value: domain, HasCertificate: false, ForceSSL: false };
     }
 
     if (!hostname.HasCertificate) {
       const query = `hostname=${encodeURIComponent(domain)}`;
-      const failure = await api(apiKey, "GET", `/pullzone/loadFreeCertificate?${query}`).then(
+      const failure = await api(apiKey, {
+        method: "GET",
+        path: `/pullzone/loadFreeCertificate?${query}`,
+      }).then(
         () => undefined,
         (error: unknown) => errorMessage(error),
       );
@@ -125,9 +151,13 @@ export async function ensureDomains(apiKey: string, config: Config) {
     }
 
     if (!hostname.ForceSSL) {
-      await api(apiKey, "POST", `/pullzone/${config.pullZoneId}/setForceSSL`, {
-        Hostname: domain,
-        ForceSSL: true,
+      await api(apiKey, {
+        method: "POST",
+        path: `/pullzone/${config.pullZoneId}/setForceSSL`,
+        body: {
+          Hostname: domain,
+          ForceSSL: true,
+        },
       });
     }
   }
@@ -136,7 +166,11 @@ export async function ensureDomains(apiKey: string, config: Config) {
 }
 
 async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) {
-  const pullZone = await apiJson(PullZone, apiKey, "GET", `/pullzone/${pullZoneId}`);
+  const pullZone = await apiJson(apiKey, {
+    schema: PullZone,
+    method: "GET",
+    path: `/pullzone/${pullZoneId}`,
+  });
   const existing = pullZone.EdgeRules.filter((r) => r.Description?.startsWith(RULE_PREFIX));
   const existingDescriptions = new Set(existing.map((r) => r.Description));
   const wanted = new Set(rules.map((r) => r.Description));
@@ -147,11 +181,15 @@ async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) 
   log.step(`Updating edge rules (+${added.length} -${removed.length})`);
 
   for (const rule of added) {
-    await api(apiKey, "POST", `/pullzone/${pullZoneId}/edgerules/addOrUpdate`, rule);
+    await api(apiKey, {
+      method: "POST",
+      path: `/pullzone/${pullZoneId}/edgerules/addOrUpdate`,
+      body: rule,
+    });
   }
 
   for (const rule of removed) {
-    await api(apiKey, "DELETE", `/pullzone/${pullZoneId}/edgerules/${rule.Guid}`);
+    await api(apiKey, { method: "DELETE", path: `/pullzone/${pullZoneId}/edgerules/${rule.Guid}` });
   }
 }
 

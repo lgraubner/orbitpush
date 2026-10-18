@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 import { createRequire } from "node:module";
 
-import mri from "mri";
-import * as z from "zod/mini";
-
+import { parseArgs } from "./args.ts";
 import { apiKeyFromEnv } from "./bunny.ts";
 import { readConfig } from "./config.ts";
 import { deploy } from "./deploy.ts";
 import { init } from "./init.ts";
 import { errorMessage, log } from "./log.ts";
+import { z } from "./zod.ts";
 
 const { version } = z
   .object({ version: z.string() })
@@ -31,28 +30,22 @@ Init options (skip the matching prompt):
 Environment:
   BUNNY_API_KEY      Your bunny.net account API key (required)`;
 
-const args = mri(process.argv.slice(2), {
-  boolean: ["help", "version", "yes", "spa"],
-  string: ["name", "dir", "domain", "region"],
-  alias: { h: "help", v: "version", y: "yes" },
-});
-const [command] = args._;
 const interactive = Boolean(process.stdin.isTTY && process.stderr.isTTY) && !process.env.CI;
 
 try {
+  const args = parseArgs(process.argv.slice(2));
+
   if (args.version) {
     process.stdout.write(`${version}\n`);
-  } else if (command === "init") {
-    // mri defaults booleans to false, so only skip the prompt when --spa or --no-spa was given
-    const spaGiven = process.argv.some((arg) => arg === "--spa" || arg === "--no-spa");
-    await init({ ...args, spa: spaGiven ? args.spa : undefined }, interactive);
-  } else if (command === "deploy") {
+  } else if (args.command === "init") {
+    await init(args.flags, interactive);
+  } else if (args.command === "deploy") {
     const started = Date.now();
     await deploy(apiKeyFromEnv(), await readConfig());
     log.success(`Deployed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   } else {
     process.stdout.write(`${help}\n`);
-    if (command && !args.help) process.exitCode = 2;
+    if (args.command && !args.help) process.exitCode = 2;
   }
 } catch (error) {
   if (error instanceof Error && error.name === "ExitPromptError") {

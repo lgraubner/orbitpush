@@ -57,7 +57,9 @@ test("init creates both zones and writes orbitpush.json", async () => {
     "POST https://api.bunny.net/storagezone",
     "POST https://api.bunny.net/pullzone",
   ]);
-  expect(JSON.parse(await readFile("orbitpush.json", "utf8"))).toMatchObject({
+  const written: unknown = JSON.parse(await readFile("orbitpush.json", "utf8"));
+
+  expect(written).toMatchObject({
     storageZoneId: 1,
     pullZoneId: 2,
   });

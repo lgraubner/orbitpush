@@ -61,7 +61,7 @@ test("names every invalid field", async () => {
 
   const message = await readConfig().then(
     () => "",
-    (caught: Error) => caught.message,
+    (caught: unknown) => (caught instanceof Error ? caught.message : ""),
   );
 
   expect(message).toMatch(/^Invalid orbitpush\.json/);
@@ -69,4 +69,10 @@ test("names every invalid field", async () => {
   expect(message).toMatch(/geoZones/);
   expect(message).toMatch(/pullZoneId/);
   expect(message).not.toMatch(/outputDir/);
+});
+
+test("rejects an empty geoZones list, which would deliver the site nowhere", async () => {
+  await writeFile("orbitpush.json", JSON.stringify({ ...valid, geoZones: [] }));
+
+  await expect(readConfig()).rejects.toThrow(/geoZones/);
 });
