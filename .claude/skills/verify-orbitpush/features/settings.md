@@ -1,0 +1,35 @@
+# Settings
+
+The settings in `orbitpush.json` are applied on every deploy: SPA or 404 handling on the storage zone, replication regions, CDN delivery regions on the pull zone, and custom domains with free SSL. Editing the file and deploying is how users change them.
+
+## Sub-features
+
+- `settings-spa` with `"spa": true` serves `/index.html` with status 200 for unknown extensionless paths.
+- `settings-404` with `"spa": false` and a `404.html` in the output serves it for missing files; without the file, no custom 404.
+- `settings-replication` sends the replication regions without the main region.
+- `settings-geo` enables exactly the listed delivery regions.
+- `settings-domains` adds new hostnames, requests SSL and forces HTTPS once a certificate exists; removed hostnames stay.
+- `settings-invalid` rejects an invalid `orbitpush.json` with a list of problems before any request.
+
+## How to get to it (user POV)
+
+- Answer the matching `init` prompts, or edit `orbitpush.json` and run `orbitpush deploy`.
+
+## Driving it with ctl.sh
+
+Preconditions:
+
+- `init` with `--name verify-f --dir public --yes` exited `0` (`spa` false, delivery regions `EU` and `US`).
+
+- **404.** Deploy. The summary's storage zone has `Custom404FilePath: "/404.html"` and `Rewrite404To200: false`. Delete `public/404.html` and deploy: `Custom404FilePath` is `""`.
+- **SPA.** Set `"spa": true` and deploy. The storage zone has `Custom404FilePath: "/index.html"` and `Rewrite404To200: true`.
+- **Regions.** Set `"replicationRegions": ["DE", "NY"]` and `"geoZones": ["EU", "ASIA"]` and deploy. The storage zone has `ReplicationRegions: ["NY"]`, and the pull zone has `EnableGeoZoneEU` and `EnableGeoZoneASIA` true and the other three false.
+- **Domains.** Add `"www.example.test"` to `domains` and deploy. stderr warns `No SSL certificate for www.example.test yet`. Deploy again with `FAKE_BUNNY_CERT=ok` before `--`: no warning; the hostname has `HasCertificate` and `ForceSSL` true. Remove it from `domains` and deploy: it is still in `Hostnames`.
+- **Invalid.** Set `"region": "XX"` and `"geoZones": ["MARS"]` and deploy. Exit `1`, stderr starts with `Invalid orbitpush.json:` and names both fields, and no new request appears.
+- **Live.** After an approved live deploy with `"spa": true`: `curl -sS -o /dev/null -w '%{http_code}' https://verify-$RUN.b-cdn.net/some/route` gives `200` with the `index.html` body; `/missing.js` gives `404`.
+
+## Gotchas
+
+- bunny.net cannot remove replication regions. The fake accepts any list, so a removal that bunny.net rejects only shows live.
+- The main `region` cannot change after init. Editing it changes nothing, because the CLI never sends it on deploy.
+- `Rewrite404To200` affects only paths without a file extension on bunny.net. Offline you can see the flag, not that behavior.
