@@ -22,7 +22,6 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-// Fakes bunny.net creating storage zone 1 and pull zone 2, and records every write
 function fakeBunny({ pullZoneTaken = false } = {}) {
   const writes: string[] = [];
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Drives the built orbitpush CLI against fake-bunny.mjs. See SKILL.md for the recipes.
 set -euo pipefail
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,7 +41,6 @@ EVIDENCE="$REPO/.verify-artifacts/$run"
 STATE="$EVIDENCE/bunny-state.json"
 SESSION="orbitpush-verify-$run"
 
-# Splits "[env=val...] -- <args...>" into ENV_ARGS and CLI_ARGS
 split_args() {
   ENV_ARGS=()
   CLI_ARGS=()

@@ -19,8 +19,7 @@ export type EdgeRule = {
 
 export type Parsed = { rules: EdgeRule[]; warnings: string[] };
 
-// Netlify path ("/blog/:slug/*" or "https://host/path") -> Lua pattern on the full request URL,
-// plus the segment index of each placeholder for building %{Path.N} targets.
+// bunny.net matches edge rule triggers against the full request URL, scheme and host included
 export function toPattern(from: string) {
   const match = /^(?:https?:\/\/([^/]+))?(\/.*)$/.exec(from);
   if (!match) throw new Error(`invalid path "${from}"`);
@@ -61,9 +60,11 @@ function rule(
     TriggerMatchingType: 0 as const,
     Enabled: true as const,
   };
-  // The hash lets deploy keep unchanged rules and only touch the ones that differ.
-  const hash = createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 10);
-  return { ...body, Description: `${RULE_PREFIX}${hash} ${description}`.slice(0, 255) };
+  return { ...body, Description: `${RULE_PREFIX}${ruleHash(body)} ${description}`.slice(0, 255) };
+}
+
+function ruleHash(body: Omit<EdgeRule, "Description">) {
+  return createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 10);
 }
 
 export function parseRedirects(text: string): Parsed {

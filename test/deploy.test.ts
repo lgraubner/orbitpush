@@ -29,7 +29,6 @@ function config(outputDir: string): Config {
   };
 }
 
-// Fakes a storage zone "site" and pull zone 2, and records every request
 function fakeBunny() {
   const kept = parseRedirects("/a /b").rules[0].Description;
   const writes: string[] = [];

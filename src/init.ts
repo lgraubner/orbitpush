@@ -89,8 +89,6 @@ export async function init(flags: InitFlags, interactive: boolean) {
     ZoneTier: 0,
   });
 
-  // Until orbitpush.json exists, nothing points at the new zones and their names stay taken, so
-  // any failure before then deletes them again. Later steps (domains) are reconciled by deploy.
   let pullZone: PullZone | undefined;
   let config: Config;
   try {
@@ -117,12 +115,7 @@ export async function init(flags: InitFlags, interactive: boolean) {
     };
     await writeConfig(config);
   } catch (error) {
-    const remove = (path: string, label: string) =>
-      api(apiKey, "DELETE", path).catch(() =>
-        log.warn(`Could not delete ${label}. Delete it in the bunny.net dashboard.`),
-      );
-    if (pullZone) await remove(`/pullzone/${pullZone.Id}`, `pull zone ${name} (${pullZone.Id})`);
-    await remove(`/storagezone/${storageZone.Id}`, `storage zone ${name} (${storageZone.Id})`);
+    await deleteNewZones(apiKey, name, storageZone, pullZone);
     throw error;
   }
 
@@ -133,4 +126,19 @@ export async function init(flags: InitFlags, interactive: boolean) {
   if (!process.env.BUNNY_API_KEY)
     log.detail("Set BUNNY_API_KEY in your environment before deploying.");
   log.detail("Next: build your site, then run `npx orbitpush deploy`");
+}
+
+async function deleteNewZones(
+  apiKey: string,
+  name: string,
+  storageZone: StorageZone,
+  pullZone: PullZone | undefined,
+) {
+  const remove = (path: string, label: string) =>
+    api(apiKey, "DELETE", path).catch(() =>
+      log.warn(`Could not delete ${label}. Delete it in the bunny.net dashboard.`),
+    );
+
+  if (pullZone) await remove(`/pullzone/${pullZone.Id}`, `pull zone ${name} (${pullZone.Id})`);
+  await remove(`/storagezone/${storageZone.Id}`, `storage zone ${name} (${storageZone.Id})`);
 }

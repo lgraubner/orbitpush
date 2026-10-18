@@ -105,7 +105,7 @@ Kills only the tmux session `orbitpush-verify-$RUN` and deletes only `$TMPDIR/or
 ## Helpers
 
 - `ctl.sh` (executable): every subcommand above. `ctl.sh` without arguments prints usage.
-- `fake-bunny.mjs`: the preload. `node fake-bunny.mjs summary <state.json>` prints a summary; the header comment lists the routes and knobs.
+- `fake-bunny.mjs`: the preload. `node fake-bunny.mjs summary <state.json>` prints a summary. The knobs are listed under Drive.
 - `fixtures/site/`: the fixture project, copied into each work dir.
 
 ## Feature map

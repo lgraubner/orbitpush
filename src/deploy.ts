@@ -15,7 +15,6 @@ export async function deploy(apiKey: string, config: Config) {
   const files = await readOutput(config.outputDir);
   if (!files.has("index.html")) log.warn(`No index.html in ${config.outputDir}`);
 
-  // Parse rules before touching anything so a broken file fails fast.
   const rules = await readRules(config.outputDir);
 
   log.step("Comparing with storage zone");
@@ -24,8 +23,7 @@ export async function deploy(apiKey: string, config: Config) {
   const changed = [...files].filter(
     ([path, file]) => remote.get(path)?.toUpperCase() !== file.checksum,
   );
-  // HTML last, so new pages never reference assets that are not uploaded yet.
-  changed.sort(([a], [b]) => Number(a.endsWith(".html")) - Number(b.endsWith(".html")));
+  changed.sort(([a], [b]) => htmlLast(a, b));
   const stale = [...remote.keys()].filter((path) => !files.has(path));
 
   log.step(`Uploading ${changed.length} of ${files.size} files`);
@@ -68,21 +66,26 @@ async function readOutput(dir: string) {
   return files;
 }
 
+function htmlLast(a: string, b: string) {
+  return Number(a.endsWith(".html")) - Number(b.endsWith(".html"));
+}
+
+async function readIfExists(path: string) {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw error;
+  }
+}
+
 async function readRules(dir: string) {
-  // Only a missing file means "no rules"; any other read error must stop the deploy, or the
-  // rule sync would delete every managed rule
-  const read = (name: string) =>
-    readFile(join(dir, name), "utf8").catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return "";
-      throw error;
-    });
-  const redirects = parseRedirects(await read("_redirects"));
-  const headers = parseHeaders(await read("_headers"));
+  const redirects = parseRedirects(await readIfExists(join(dir, "_redirects")));
+  const headers = parseHeaders(await readIfExists(join(dir, "_headers")));
   for (const warning of [...redirects.warnings, ...headers.warnings]) log.warn(warning);
   return [...redirects.rules, ...headers.rules];
 }
 
-// Settings from orbitpush.json are applied on every deploy, so editing the file is enough.
 export async function applySettings(apiKey: string, config: Config, has404: boolean) {
   log.step("Applying settings");
   await api(apiKey, "POST", `/storagezone/${config.storageZoneId}`, {
@@ -134,7 +137,6 @@ export async function ensureDomains(apiKey: string, config: Config) {
   return cdnHost;
 }
 
-// Only rules with our description prefix are managed; rules created in the dashboard stay untouched.
 async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) {
   const pullZone = await api<PullZone>(apiKey, "GET", `/pullzone/${pullZoneId}`);
   const existing = pullZone.EdgeRules.filter((r) => r.Description?.startsWith(RULE_PREFIX));

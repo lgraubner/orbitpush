@@ -1,15 +1,3 @@
-// Offline stand-in for api.bunny.net and the bunny.net storage API.
-//
-// Preload:  FAKE_BUNNY_STATE=<state.json> node --import <this file> dist/cli.js <command>
-//   Replaces globalThis.fetch. Requests to api.bunny.net and *.storage.bunnycdn.com are served
-//   from <state.json>, which persists between CLI runs; every request is appended to
-//   state.requests. Any other URL throws, so a run under this preload cannot reach the network.
-//   FAKE_BUNNY_CERT=ok makes loadFreeCertificate succeed (default: fails like a domain whose
-//   DNS does not point at the pull zone yet).
-//   FAKE_BUNNY_FAIL="<METHOD> <path>" answers that one request with HTTP 500.
-//
-// Summary:  node <this file> summary <state.json>
-//   Prints zones, stored files, edge rules, purge count and the write requests as JSON.
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 

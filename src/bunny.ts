@@ -56,7 +56,6 @@ export function storage(zone: StorageZone) {
     put: (path: string, data: Blob, checksum: string) =>
       request("PUT", path, { body: data, headers: { Checksum: checksum.toUpperCase() } }),
     delete: (path: string) => request("DELETE", path),
-    // Recursively lists files as { "dir/file.js": "SHA256 checksum" }.
     async list(dir = ""): Promise<Map<string, string>> {
       const entries = (await (await request("GET", dir)).json()) as {
         ObjectName: string;
