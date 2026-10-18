@@ -92,6 +92,8 @@ curl -sSI https://$HOST/ | tee .verify-artifacts/$RUN/live-root-headers.txt
 $C live-destroy $RUN
 ```
 
+For a claim that spans sites or the whole lifecycle, run `npm run test:e2e` instead (same approval rule): it deploys the demo sites in `e2e/sites/` and checks pages, redirects, headers, domains, disable, enable and destroy in Chromium.
+
 `live` uses the real `BUNNY_API_KEY` from the environment and records the same evidence as `cli`. `features/edge-rules.md` and `features/settings.md` list the live checks. `live-destroy` deletes the pull zone and storage zone from this run's `orbitpush.json` after checking their names, and logs to `live-destroy.log`. Run it even when a step failed; if `init` failed before writing `orbitpush.json`, check the dashboard for `verify-$RUN` zones and tell the user.
 
 ## Cleanup

@@ -24,6 +24,7 @@ function config(outputDir: string): Config {
     region: "DE",
     replicationRegions: ["DE", "NY"],
     geoZones: ["EU"],
+    trailingSlash: "ignore",
     storageZoneId: 1,
     pullZoneId: 2,
   };
@@ -270,6 +271,31 @@ test("deploy enables exactly the configured delivery regions on the pull zone", 
   });
 });
 
+test("deploy caches each hostname separately, so noindex never reaches the domain", async () => {
+  const dir = await outputDir();
+  const { bodies } = fakeBunny();
+
+  await deploy("key", config(dir));
+
+  expect(bodies["POST https://api.bunny.net/pullzone/2"]).toMatchObject({
+    EnableHostnameVary: true,
+  });
+});
+
+test("deploy makes browsers revalidate every file while bunny.net keeps caching it", async () => {
+  const dir = await outputDir();
+  const { bodies } = fakeBunny();
+
+  await deploy("key", config(dir));
+
+  expect(bodies["POST https://api.bunny.net/pullzone/2"]).toMatchObject({
+    CacheControlPublicMaxAgeOverride: 0,
+  });
+  expect(bodies["POST https://api.bunny.net/pullzone/2"]).not.toHaveProperty(
+    "CacheControlMaxAgeOverride",
+  );
+});
+
 test("deploy serves index.html for unknown paths when _redirects has the SPA rule", async () => {
   const dir = await outputDir();
   await writeFile(join(dir, "_redirects"), "/a /b\n/* /index.html 200");
@@ -409,10 +435,12 @@ test("deploy fails without writing when the storage zone keeps rejecting its pas
 
 // bunny.net reads a trigger pattern after "pattern:" as a Lua pattern, whose escape is %
 const triggerMatches = (rule: unknown, url: string) =>
-  (rule as { Triggers: { PatternMatches: string[] }[] }).Triggers.some((trigger) =>
-    trigger.PatternMatches.some((p) =>
-      new RegExp(p.replace(/^pattern:/, "").replace(/%(.)/g, "\\$1")).test(url),
-    ),
+  (rule as { Triggers: { Type: number; PatternMatches: string[] }[] }).Triggers.some(
+    (trigger) =>
+      trigger.Type === 0 &&
+      trigger.PatternMatches.some((p) =>
+        new RegExp(p.replace(/^pattern:/, "").replace(/%(.)/g, "\\$1")).test(url),
+      ),
   );
 
 test("deploy keeps the disabled rule while deleting other stale managed rules", async () => {
@@ -504,4 +532,79 @@ test("deploy redirects each alias to the main domain and marks the b-cdn.net hos
   expect(triggerMatches(noindex[0], "https://www.example.com/a")).toBe(false);
   expect(triggerMatches(noindex[0], "https://example.com/a")).toBe(false);
   expect(noindex[0].OrderIndex).toBeLessThan(fileOrder);
+});
+
+type Rule = {
+  Description: string;
+  ActionType: number;
+  ActionParameter1: string;
+  ActionParameter2: string;
+  OrderIndex: number;
+  TriggerMatchingType: number;
+  Triggers: { Type: number; PatternMatchingType: number; PatternMatches: string[] }[];
+};
+
+async function slashRules(trailingSlash?: Config["trailingSlash"], redirects = "/a /b") {
+  const dir = await outputDir();
+  await writeFile(join(dir, "_redirects"), redirects);
+  const { edgeRuleWrites } = fakeBunny({ edgeRules: [] });
+
+  await deploy("key", { ...config(dir), trailingSlash });
+
+  const rules = edgeRuleWrites as Rule[];
+  const slash = rules.filter((r) => r.ActionType === 1 && r.Description.includes("trailing slash"));
+  return { rules, slash };
+}
+
+test("deploy redirects extensionless paths to their trailing slash by default, after the file rules", async () => {
+  const { rules, slash } = await slashRules();
+
+  expect(slash).toHaveLength(1);
+  const [rule] = slash;
+  expect(rule.ActionParameter1).toBe("https://%{Url.Hostname}%{Url.Directory}%{Url.FileName}/");
+  expect(rule.ActionParameter2).toBe("301");
+  for (const url of [
+    "https://site.b-cdn.net/guides",
+    "https://www.example.com/a/b",
+    "https://x.y/v1.2/docs",
+  ]) {
+    expect(triggerMatches(rule, url), url).toBe(true);
+  }
+  for (const url of [
+    "https://site.b-cdn.net/",
+    "https://site.b-cdn.net/guides/",
+    "https://site.b-cdn.net/a/app.js",
+    "https://site.b-cdn.net/a.html",
+  ]) {
+    expect(triggerMatches(rule, url), url).toBe(false);
+  }
+  expect(rule.OrderIndex).toBeGreaterThan(
+    rules.find((r) => r.Description === kept)?.OrderIndex ?? Infinity,
+  );
+});
+
+test("deploy adds no trailing slash rule in SPA mode unless one is configured", async () => {
+  const spa = "/a /b\n/* /index.html 200";
+
+  expect((await slashRules(undefined, spa)).slash).toHaveLength(0);
+  expect((await slashRules("always", spa)).slash).toHaveLength(1);
+});
+
+test("deploy adds no trailing slash rule with trailingSlash ignore", async () => {
+  expect((await slashRules("ignore")).slash).toHaveLength(0);
+});
+
+test("deploy strips the trailing slash with trailingSlash never, except with a query string", async () => {
+  const { slash } = await slashRules("never");
+
+  expect(slash).toHaveLength(1);
+  const [rule] = slash;
+  expect(rule.ActionParameter1).toBe("https://%{Url.Hostname}/%{Path.0-}");
+  expect(rule.ActionParameter2).toBe("301");
+  expect(triggerMatches(rule, "https://site.b-cdn.net/guides/")).toBe(true);
+  expect(triggerMatches(rule, "https://site.b-cdn.net/a/b/")).toBe(true);
+  expect(triggerMatches(rule, "https://site.b-cdn.net/")).toBe(false);
+  expect(triggerMatches(rule, "https://site.b-cdn.net/guides")).toBe(false);
+  expect(rule.TriggerMatchingType).toBe(1);
+  expect(rule.Triggers).toContainEqual({ Type: 6, PatternMatchingType: 2, PatternMatches: ["*"] });
 });

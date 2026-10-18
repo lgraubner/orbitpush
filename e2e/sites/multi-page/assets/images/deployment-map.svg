@@ -1,0 +1,55 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 520 320"
+  role="img"
+  aria-labelledby="title desc"
+>
+  <title id="title">Deployment flow diagram</title>
+  <desc id="desc">
+    Four cards show upload, validate, deploy, and live connected by arrows.
+  </desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f7fbf7" />
+      <stop offset="100%" stop-color="#e4f4ec" />
+    </linearGradient>
+  </defs>
+  <rect width="520" height="320" rx="28" fill="url(#bg)" />
+  <g fill="#17211c" font-family="Arial, sans-serif">
+    <rect x="26" y="54" width="104" height="88" rx="18" fill="#ffffff" />
+    <rect x="150" y="54" width="104" height="88" rx="18" fill="#ffffff" />
+    <rect x="274" y="54" width="104" height="88" rx="18" fill="#ffffff" />
+    <rect x="398" y="54" width="96" height="88" rx="18" fill="#ffffff" />
+    <text x="78" y="90" font-size="18" text-anchor="middle">Upload</text>
+    <text x="202" y="90" font-size="18" text-anchor="middle">Validate</text>
+    <text x="326" y="90" font-size="18" text-anchor="middle">Deploy</text>
+    <text x="446" y="90" font-size="18" text-anchor="middle">Live</text>
+    <text x="78" y="114" font-size="12" text-anchor="middle" fill="#5d665f">
+      artifact stored
+    </text>
+    <text x="202" y="114" font-size="12" text-anchor="middle" fill="#5d665f">
+      checks pass
+    </text>
+    <text x="326" y="114" font-size="12" text-anchor="middle" fill="#5d665f">
+      files copied
+    </text>
+    <text x="446" y="114" font-size="12" text-anchor="middle" fill="#5d665f">
+      URL active
+    </text>
+    <path
+      d="M130 98h20m104 0h20m104 0h20"
+      stroke="#1f7a59"
+      stroke-linecap="round"
+      stroke-width="4"
+      fill="none"
+    />
+    <path d="M146 90l12 8-12 8" fill="none" stroke="#1f7a59" stroke-width="4" />
+    <path d="M270 90l12 8-12 8" fill="none" stroke="#1f7a59" stroke-width="4" />
+    <path d="M394 90l12 8-12 8" fill="none" stroke="#1f7a59" stroke-width="4" />
+    <rect x="36" y="186" width="448" height="92" rx="20" fill="#17211c" />
+    <text x="64" y="222" font-size="17" fill="#ffffff">Coverage</text>
+    <text x="64" y="247" font-size="13" fill="#d7e6dd">
+      relative links, absolute links, nested index pages, SVG assets, and 404s
+    </text>
+  </g>
+</svg>

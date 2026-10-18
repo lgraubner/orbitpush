@@ -53,6 +53,10 @@
       },
       "description": "CDN delivery regions of the pull zone."
     },
+    "trailingSlash": {
+      "enum": ["always", "never", "ignore"],
+      "description": "Redirect extensionless paths to their trailing slash form (always), away from it (never), or not at all (ignore). Defaults to always, or ignore in SPA mode."
+    },
     "storageZoneId": {
       "type": "integer"
     },

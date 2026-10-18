@@ -26,6 +26,10 @@ An edge rule whose description starts with `orbitpush <hash>`. Only managed rule
 The storage zone setting that serves `index.html` with status 200 for a missing path without a file extension. The line `/* /index.html 200` in `_redirects` turns it on; it is the only rewrite orbitpush supports, and it is not an edge rule.
 _Avoid_: SPA fallback, `spa` option
 
+**Trailing slash mode**:
+The `trailingSlash` setting: `always` redirects `/guides` to `/guides/`, `never` the other way, `ignore` does neither. One managed rule, default `always`, or `ignore` in SPA mode.
+_Avoid_: pretty URLs, which on Netlify also serve `/about.html` at `/about/`
+
 **Custom domain**:
 The one hostname in `domain` that serves the site. Every other hostname of the site is an alias.
 _Avoid_: main domain, primary domain

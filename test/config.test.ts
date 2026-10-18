@@ -55,7 +55,13 @@ test("reports malformed JSON as an invalid orbitpush.json", async () => {
 test("names every invalid field", async () => {
   await writeFile(
     "orbitpush.json",
-    JSON.stringify({ ...valid, region: "XX", geoZones: ["MARS"], pullZoneId: "2" }),
+    JSON.stringify({
+      ...valid,
+      region: "XX",
+      geoZones: ["MARS"],
+      pullZoneId: "2",
+      trailingSlash: "sometimes",
+    }),
   );
 
   const message = await readConfig().then(
@@ -67,6 +73,7 @@ test("names every invalid field", async () => {
   expect(message).toMatch(/region.*"DE"/);
   expect(message).toMatch(/geoZones/);
   expect(message).toMatch(/pullZoneId/);
+  expect(message).toMatch(/trailingSlash/);
   expect(message).not.toMatch(/outputDir/);
 });
 

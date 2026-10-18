@@ -11,6 +11,8 @@ export const SCHEMA_URL = "https://unpkg.com/orbitpush/schema.json";
 export const STORAGE_REGIONS = ["DE", "UK", "SE", "NY", "LA", "SG", "SYD", "BR", "JH"] as const;
 export const GEO_ZONES = ["EU", "US", "ASIA", "SA", "AF"] as const;
 
+export const TRAILING_SLASH = ["always", "never", "ignore"] as const;
+
 export const Region = z.enum(STORAGE_REGIONS);
 export type Region = z.infer<typeof Region>;
 export type GeoZone = (typeof GEO_ZONES)[number];
@@ -24,6 +26,7 @@ const ConfigSchema = z
     region: Region,
     replicationRegions: z.array(Region),
     geoZones: z.array(z.enum(GEO_ZONES)).check(z.minLength(1)),
+    trailingSlash: z.optional(z.enum(TRAILING_SLASH)),
     storageZoneId: z.int(),
     pullZoneId: z.int(),
   })

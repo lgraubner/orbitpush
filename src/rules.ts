@@ -7,6 +7,9 @@ const REDIRECT = 1;
 const BLOCK_REQUEST = 4;
 const SET_RESPONSE_HEADER = 5;
 const COUNTRY_CODE = 4;
+const RESPONSE_HEADER = 2;
+const QUERY_STRING = 6;
+const MATCH_NONE = 2;
 const MATCH_ALL = 1;
 const COUNTRY_CONDITION = /^Country=([a-z]{2}(?:,[a-z]{2})*)$/i;
 // bunny.net serves only 301 and 302: it rejects 303 and serves 308 as 301
@@ -22,7 +25,12 @@ export const DISABLED_RULE = `${RULE_PREFIX}disabled`;
 
 type EdgeRuleAction = { ActionType: number; ActionParameter1: string; ActionParameter2: string };
 
-type Trigger = { Type: 0 | typeof COUNTRY_CODE; PatternMatchingType: 0; PatternMatches: string[] };
+type Trigger = {
+  Type: 0 | typeof RESPONSE_HEADER | typeof COUNTRY_CODE | typeof QUERY_STRING;
+  PatternMatchingType: 0 | typeof MATCH_NONE;
+  Parameter1?: string;
+  PatternMatches: string[];
+};
 
 export type EdgeRule = EdgeRuleAction & {
   ExtraActions: EdgeRuleAction[];
@@ -35,7 +43,9 @@ export type EdgeRule = EdgeRuleAction & {
 export type Parsed = { rules: EdgeRule[]; warnings: string[] };
 
 // bunny.net matches edge rule triggers against the full request URL, scheme and host included
-export function toPattern(from: string) {
+const escapeLua = (text: string) => text.replace(/[\^$()%.[\]*+\-?]/g, "%$&");
+
+export function toPattern(from: string, { wildcards = false } = {}) {
   const match = /^(?:https?:\/\/([^/]+))?(\/.*)$/.exec(from);
   if (!match) throw new Error(`invalid path "${from}"`);
 
@@ -43,6 +53,15 @@ export function toPattern(from: string) {
   const segments = path.split("/").slice(1);
   const params = new Map<string, number>();
   const parts = segments.map((segment, index) => {
+    if (segment.includes("*") && segment.includes(":")) {
+      throw new Error(`a placeholder and "*" can't share a segment in "${from}"`);
+    }
+
+    // Netlify's _headers paths take * anywhere, matching any characters
+    if (wildcards && segment.includes("*")) {
+      return segment.split("*").map(escapeLua).join(".*");
+    }
+
     if (segment === "*") {
       if (index !== segments.length - 1) {
         throw new Error(`"*" must be the last segment in "${from}"`);
@@ -58,15 +77,16 @@ export function toPattern(from: string) {
     }
 
     if (segment.includes("*")) throw new Error(`"*" must be a whole segment in "${from}"`);
+    if (segment.includes(":")) throw new Error(`":name" must be a whole segment in "${from}"`);
 
-    return segment.replace(/[\^$()%.[\]*+\-?]/g, "%$&");
+    return escapeLua(segment);
   });
 
   let pattern = `/${parts.join("/")}`;
   // Netlify matches with and without trailing slash
   if (!pattern.endsWith(".*")) pattern = pattern.replace(/\/?$/, "/?");
 
-  const hostPattern = host ? host.replace(/[\^$()%.[\]*+\-?]/g, "%$&") : "[^/]+";
+  const hostPattern = host ? escapeLua(host) : "[^/]+";
 
   return { pattern: `pattern:^https?://${hostPattern}${pattern}$`, params };
 }
@@ -78,14 +98,17 @@ function rule({
   actions: [first, ...extra],
 }: {
   description: string;
-  pattern: string;
+  pattern: string | string[];
   conditions?: Trigger[];
   actions: [EdgeRuleAction, ...EdgeRuleAction[]];
 }): EdgeRule {
   const body = {
     ...first,
     ExtraActions: extra,
-    Triggers: [{ Type: 0, PatternMatchingType: 0, PatternMatches: [pattern] }, ...conditions],
+    Triggers: [
+      { Type: 0, PatternMatchingType: 0, PatternMatches: [pattern].flat() },
+      ...conditions,
+    ],
     TriggerMatchingType: conditions.length ? MATCH_ALL : 0,
     Enabled: true,
   } satisfies Omit<EdgeRule, "Description">;
@@ -136,6 +159,54 @@ export function domainRules({
   });
 
   return [...redirects, noindex];
+}
+
+export function trailingSlashRule(mode: "always" | "never" | "ignore"): EdgeRule[] {
+  if (mode === "always") {
+    const always = rule({
+      description: "trailing slash always",
+      pattern: ["pattern:^https?://[^/]+/[^/%.]+$", "pattern:^https?://[^/]+/.*/[^/%.]+$"],
+      // Edge rules run before the storage zone is asked, so only the HTML response tells a
+      // directory index apart from a file without an extension
+      conditions: [
+        {
+          Type: RESPONSE_HEADER,
+          PatternMatchingType: 0,
+          Parameter1: "Content-Type",
+          PatternMatches: ["text/html*"],
+        },
+      ],
+      actions: [
+        {
+          ActionType: REDIRECT,
+          // %{Url.Path} and %{Path.n} include the query string, Directory and FileName do not
+          ActionParameter1: "https://%{Url.Hostname}%{Url.Directory}%{Url.FileName}/",
+          ActionParameter2: "301",
+        },
+      ],
+    });
+    return [always];
+  }
+
+  if (mode === "never") {
+    const never = rule({
+      description: "trailing slash never",
+      pattern: "pattern:^https?://[^/]+/.+/$",
+      // %{Path.0-} keeps the query string and its slash, and bunny.net matches the pattern
+      // without the query, so a request with a query would redirect to itself.
+      conditions: [{ Type: QUERY_STRING, PatternMatchingType: MATCH_NONE, PatternMatches: ["*"] }],
+      actions: [
+        {
+          ActionType: REDIRECT,
+          ActionParameter1: "https://%{Url.Hostname}/%{Path.0-}",
+          ActionParameter2: "301",
+        },
+      ],
+    });
+    return [never];
+  }
+
+  return [];
 }
 
 export function disabledRule(): EdgeRule {
@@ -223,10 +294,32 @@ export function parseRedirects(text: string): Parsed & { spa: boolean } {
   return { rules, warnings, spa };
 }
 
+// Netlify ignores these, and bunny.net rejects the whole rule for some of them
+const IGNORED_HEADERS = new Set([
+  "accept-ranges",
+  "age",
+  "allow",
+  "alt-svc",
+  "connection",
+  "content-encoding",
+  "content-length",
+  "content-range",
+  "date",
+  "location",
+  "server",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
 export function parseHeaders(text: string): Parsed {
   const rules: EdgeRule[] = [];
   const warnings: string[] = [];
-  const blocks: { n: number; path: string; headers: Map<string, string[]> }[] = [];
+  const blocks: {
+    n: number;
+    path: string;
+    headers: Map<string, { name: string; values: string[] }>;
+  }[] = [];
 
   for (const [n, line, indented] of lines(text)) {
     if (!indented) {
@@ -242,12 +335,26 @@ export function parseHeaders(text: string): Parsed {
     }
 
     const name = line.slice(0, colon).trim();
-    const values = block.headers.get(name) ?? [];
-    block.headers.set(name, [...values, line.slice(colon + 1).trim()]);
+    const key = name.toLowerCase();
+    if (key === "basic-auth") {
+      warnings.push(
+        `_headers:${n} skipped (Basic-Auth is not supported, it would publish the password)`,
+      );
+      continue;
+    }
+
+    if (IGNORED_HEADERS.has(key) || key.startsWith("cdn-")) {
+      warnings.push(`_headers:${n} skipped (${name} is set by bunny.net): ${line}`);
+      continue;
+    }
+
+    const header = block.headers.get(key) ?? { name, values: [] };
+    header.values.push(line.slice(colon + 1).trim());
+    block.headers.set(key, header);
   }
 
   for (const { n, path, headers } of blocks) {
-    const actions = [...headers].map(([name, values]) => ({
+    const actions = [...headers.values()].map(({ name, values }) => ({
       ActionType: SET_RESPONSE_HEADER,
       ActionParameter1: name,
       ActionParameter2: values.join(", "),
@@ -258,7 +365,7 @@ export function parseHeaders(text: string): Parsed {
     }
 
     try {
-      const { pattern } = toPattern(path);
+      const { pattern } = toPattern(path, { wildcards: true });
       rules.push(rule({ description: `headers ${path}`, pattern, actions }));
     } catch (error) {
       warnings.push(`_headers:${n} skipped (${errorMessage(error)}): ${path}`);

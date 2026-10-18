@@ -23,6 +23,7 @@ import {
   parseHeaders,
   parseRedirects,
   RULE_PREFIX,
+  trailingSlashRule,
 } from "./rules.ts";
 
 const RULE_FILES = ["_headers", "_redirects"];
@@ -37,7 +38,11 @@ export async function deploy(apiKey: string, config: Config) {
   if (!files.has("index.html")) log.warn(`No index.html in ${config.outputDir}`);
 
   const { rules: fileRules, spa } = await readRules(config.outputDir);
-  const rules = [...domainRules(config), ...fileRules];
+  const rules = [
+    ...domainRules(config),
+    ...fileRules,
+    ...trailingSlashRule(config.trailingSlash ?? (spa ? "ignore" : "always")),
+  ];
 
   log.step("Comparing with storage zone");
   const bucket = storage(zone);
@@ -131,7 +136,15 @@ async function applySettings(
   await api(apiKey, {
     method: "POST",
     path: `/pullzone/${config.pullZoneId}`,
-    body: geoZoneFlags(config.geoZones),
+    // bunny.net shares one cache across hostnames and caches the headers edge rules set, so
+    // without this the noindex of b-cdn.net is served on the domain from cache.
+    // Unless CacheControlPublicMaxAgeOverride is set, bunny.net tells browsers to cache every
+    // file for its 30-day edge cache time, and a purge does not reach browsers.
+    body: {
+      ...geoZoneFlags(config.geoZones),
+      EnableHostnameVary: true,
+      CacheControlPublicMaxAgeOverride: 0,
+    },
   });
   await ensureDomains(apiKey, config);
 }

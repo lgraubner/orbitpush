@@ -31,7 +31,14 @@ Preconditions:
 
 ## Gotchas
 
-- Offline proves which rules orbitpush sends, not that bunny.net's Lua patterns match. The pattern format (`pattern:^https?://...`) has not been proven live yet: run the live checks before claiming redirects work.
+- Offline proves which rules orbitpush sends, not that bunny.net's Lua patterns match. `npm run test:e2e` proves the patterns, redirects and headers live.
+- Edge rules go live one by one, 2–6 s after deploy, so a check right after deploy can see some rules and not others. Wait for the rule written last.
+- bunny.net caches responses across hostnames, including headers set by edge rules, unless `EnableHostnameVary` is on. Deploy turns it on.
+- A trigger takes at most 5 patterns, a rule at most 5 triggers, and a pull zone holds 50 edge rules by default.
+- bunny.net rejects a whole rule with HTTP 400 when it sets `Server`, `Content-Length`, `Accept-Ranges`, `Connection`, `Date` or a `CDN-` header. `parseHeaders()` skips them.
+- Set Response Header rules apply to 404 responses and to redirect responses.
+- A redirect can trigger on a response header (trigger `Type: 2`, `Parameter1: "Content-Type"`). The trailing slash rule uses it to redirect only HTML, so files without an extension are served.
+- Pattern matching ignores the query string. `%{Url.Path}` and `%{Path.n}` include it; `%{Url.Directory}` and `%{Url.FileName}` do not. `%{Path.0}` is the first segment.
 - bunny.net runs rules by `OrderIndex`. The first matching redirect wins and the last matching `SetResponseHeader` wins (measured in run `lr143449`). orbitpush sets `OrderIndex` to the file position, and rewrites every kept rule on each deploy, so `~n` in `Updating edge rules` counts all kept rules, not only moved ones.
 - bunny.net rejects a relative redirect target with HTTP 400 "The entered path is not a valid URL". orbitpush sends `https://%{Url.Hostname}/…`.
 - A storage zone can answer 401 for a few seconds after `init`: the first deploy right after `init` failed in two of three live runs (`lr143339`, `lv144439`), and a retry 20 s later worked.

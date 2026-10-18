@@ -1,0 +1,22 @@
+{
+  "projects": [
+    {
+      "slug": "alpha",
+      "name": "Alpha Campaign",
+      "state": "live",
+      "summary": "A launch page with analytics and a current deployment already serving traffic."
+    },
+    {
+      "slug": "beta",
+      "name": "Beta Waitlist",
+      "state": "draft",
+      "summary": "A temporary project that still needs verification before it should persist."
+    },
+    {
+      "slug": "gamma",
+      "name": "Gamma Docs",
+      "state": "live",
+      "summary": "A static knowledge base used to confirm deeper client routes still resolve correctly."
+    }
+  ]
+}

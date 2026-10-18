@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Signal Board SPA</title>
+        <meta
+            name="description"
+            content="Small no-build Preact SPA for testing OrbitPush SPA routing and static asset delivery"
+        />
+        <link rel="stylesheet" href="/assets/styles.css" />
+        <script type="importmap">
+            {
+                "imports": {
+                    "preact": "https://esm.sh/preact@10.26.4",
+                    "preact/hooks": "https://esm.sh/preact@10.26.4/hooks",
+                    "htm": "https://esm.sh/htm@3.1.1"
+                }
+            }
+        </script>
+        <script type="module" src="/assets/app.js"></script>
+    </head>
+    <body>
+        <div id="app"></div>
+    </body>
+</html>

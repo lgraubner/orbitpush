@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { parseHeaders, parseRedirects, toPattern } from "../src/rules.ts";
+import { parseHeaders, parseRedirects, toPattern, trailingSlashRule } from "../src/rules.ts";
 
 test("paths become Lua patterns on the full URL", () => {
   expect(toPattern("/").pattern).toBe("pattern:^https?://[^/]+/?$");
@@ -12,6 +12,7 @@ test("paths become Lua patterns on the full URL", () => {
   );
   expect(() => toPattern("/a/*/b")).toThrow();
   expect(() => toPattern("/file-*.js")).toThrow();
+  expect(() => toPattern("/a-:id")).toThrow();
 });
 
 test("redirects", () => {
@@ -151,9 +152,10 @@ test("a redirect with an unsupported or malformed condition is skipped", () => {
 /c  /d  301  Country=deu
 /e  /f  301  Cookie=ab
 /g  /h  301  extra
+/i  /j  301  Role=admin
 `);
   expect(rules).toEqual([]);
-  expect(warnings).toHaveLength(4);
+  expect(warnings).toHaveLength(5);
 });
 
 test("a relative redirect target keeps the requested host, because bunny.net rejects relative targets", () => {
@@ -169,4 +171,119 @@ test("a redirect code bunny.net does not serve is sent as the closest one it doe
   expect(warnings).toHaveLength(3);
   expect(warnings[0]).toMatch(/^_redirects:1 .*303.*302/);
   expect(warnings[2]).toMatch(/^_redirects:3 .*308.*301/);
+});
+
+const headerActions = (rule: ReturnType<typeof parseHeaders>["rules"][number]) =>
+  [rule, ...rule.ExtraActions].map((a) => [a.ActionParameter1, a.ActionParameter2]);
+
+const matches = (rule: { Triggers: { PatternMatches: string[] }[] }, url: string) =>
+  rule.Triggers[0].PatternMatches.some((p) =>
+    new RegExp(p.replace(/^pattern:/, "").replace(/%(.)/g, "\\$1")).test(url),
+  );
+
+test("_headers joins a header listed twice regardless of case, keeping the first spelling", () => {
+  const { rules } = parseHeaders(`
+/*
+  Cache-Control: max-age=0
+  cache-control: no-cache
+`);
+
+  expect(headerActions(rules[0])).toEqual([["Cache-Control", "max-age=0, no-cache"]]);
+});
+
+test("_headers skips comments, also indented ones below a path", () => {
+  const { rules, warnings } = parseHeaders(`
+# a path
+/a
+  # headers for that path
+  X-Frame-Options: DENY
+`);
+
+  expect(headerActions(rules[0])).toEqual([["X-Frame-Options", "DENY"]]);
+  expect(warnings).toEqual([]);
+});
+
+test("_headers paths take * anywhere, matching any characters as on Netlify", () => {
+  const { rules, warnings } = parseHeaders(`
+/assets/*.js
+  X-A: js
+/a/*/b
+  X-B: b
+`);
+
+  expect(warnings).toEqual([]);
+  const [js, b] = rules;
+  expect(matches(js, "https://site.b-cdn.net/assets/app.js")).toBe(true);
+  expect(matches(js, "https://site.b-cdn.net/assets/lib/app.js")).toBe(true);
+  expect(matches(js, "https://site.b-cdn.net/assets/app.css")).toBe(false);
+  expect(matches(js, "https://site.b-cdn.net/assets/app.json")).toBe(false);
+  expect(matches(b, "https://site.b-cdn.net/a/x/b")).toBe(true);
+  expect(matches(b, "https://site.b-cdn.net/a/x/y/b")).toBe(true);
+  expect(matches(b, "https://site.b-cdn.net/a/b")).toBe(false);
+});
+
+test("_headers skips a segment with both a placeholder and a wildcard, as on Netlify", () => {
+  const { rules, warnings } = parseHeaders(`
+/t/:name*
+  X-A: a
+/t/*:name
+  X-B: b
+`);
+
+  expect(rules).toEqual([]);
+  expect(warnings).toHaveLength(2);
+});
+
+test("_headers never sends Basic-Auth, which would publish the password", () => {
+  const { rules, warnings } = parseHeaders(`
+/private/*
+  Basic-Auth: user:secret
+  X-A: a
+`);
+
+  expect(headerActions(rules[0])).toEqual([["X-A", "a"]]);
+  expect(JSON.stringify(rules)).not.toContain("secret");
+  expect(warnings).toEqual([expect.stringMatching(/^_headers:3 skipped .*Basic-Auth/)]);
+  expect(warnings[0]).not.toContain("secret");
+});
+
+test("_headers skips headers that Netlify ignores or bunny.net reserves, each with a warning", () => {
+  const names = [
+    "Accept-Ranges",
+    "Age",
+    "Allow",
+    "Alt-Svc",
+    "Connection",
+    "content-encoding",
+    "Content-Length",
+    "Content-Range",
+    "Date",
+    "Location",
+    "Server",
+    "Trailer",
+    "Transfer-Encoding",
+    "Upgrade",
+    "CDN-Cache",
+  ];
+  const { rules, warnings } = parseHeaders(
+    `/*\n${names.map((name) => `  ${name}: x`).join("\n")}\n  Set-Cookie: a=1\n  Content-Type: text/plain`,
+  );
+
+  expect(headerActions(rules[0])).toEqual([
+    ["Set-Cookie", "a=1"],
+    ["Content-Type", "text/plain"],
+  ]);
+  expect(warnings).toHaveLength(names.length);
+});
+
+test("the trailing slash rule redirects only HTML responses, so files without an extension are served", () => {
+  const [rule] = trailingSlashRule("always");
+
+  expect(rule.TriggerMatchingType).toBe(1);
+  expect(rule.Triggers).toContainEqual({
+    Type: 2,
+    PatternMatchingType: 0,
+    Parameter1: "Content-Type",
+    PatternMatches: ["text/html*"],
+  });
 });

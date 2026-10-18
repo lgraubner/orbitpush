@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Guides - Northstar Launch Ops</title>
+        <link rel="stylesheet" href="../assets/styles.css" />
+        <script src="../assets/app.js" defer></script>
+    </head>
+    <body data-page="guides">
+        <header class="project-header">
+            <a class="brand" href="../index.html">Northstar Launch Ops</a>
+            <nav aria-label="Main navigation">
+                <a href="../index.html">Home</a>
+                <a href="../pricing.html">Pricing</a>
+                <a aria-current="page" href="./index.html">Guides</a>
+                <a href="../contact.html">Contact</a>
+            </nav>
+        </header>
+
+        <main>
+            <section class="page-heading">
+                <p class="eyebrow">Guides directory</p>
+                <h1>This page lives at <code>guides/index.html</code>.</h1>
+                <p class="lede">
+                    Opening <strong>/guides</strong> should redirect to
+                    <strong>/guides/</strong> before this file is served.
+                </p>
+            </section>
+
+            <section class="card-grid" aria-label="Guide links">
+                <article class="card">
+                    <h2>Relative child page</h2>
+                    <p><a href="./getting-started.html">Getting started</a></p>
+                </article>
+                <article class="card">
+                    <h2>Deeper relative page</h2>
+                    <p><a href="./checklists/preflight.html">Preflight checklist</a></p>
+                </article>
+                <article class="card">
+                    <h2>Absolute root jump</h2>
+                    <p><a href="/index.html?from=guides-directory">Back to home</a></p>
+                </article>
+            </section>
+        </main>
+
+        <footer class="project-footer">
+            <a href="../contact.html">Contact</a>
+            <a href="/guides/index.html?source=absolute">Explicit nested index</a>
+        </footer>
+    </body>
+</html>

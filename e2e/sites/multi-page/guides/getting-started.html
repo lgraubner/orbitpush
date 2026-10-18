@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Getting Started - Northstar Launch Ops</title>
+        <link rel="stylesheet" href="../assets/styles.css" />
+        <script src="../assets/app.js" defer></script>
+    </head>
+    <body data-page="getting-started">
+        <header class="project-header">
+            <a class="brand" href="../index.html">Northstar Launch Ops</a>
+            <nav aria-label="Main navigation">
+                <a href="../index.html">Home</a>
+                <a href="../pricing.html">Pricing</a>
+                <a href="./index.html">Guides</a>
+                <a href="../contact.html">Contact</a>
+            </nav>
+        </header>
+
+        <main>
+            <section class="page-heading">
+                <p class="eyebrow">Guide page</p>
+                <h1>How to smoke-test a static OrbitPush deployment.</h1>
+            </section>
+
+            <section class="card-grid" aria-label="Guide steps">
+                <article class="card">
+                    <h2>1. Publish</h2>
+                    <p>Upload the project and wait for the deployment state to become live.</p>
+                </article>
+                <article class="card">
+                    <h2>2. Verify redirects</h2>
+                    <p>Check `/index.html`, nested directories, and custom 404 handling.</p>
+                </article>
+                <article class="card">
+                    <h2>3. Verify assets</h2>
+                    <p>
+                        Open
+                        <a href="../assets/images/deployment-map.svg">the raw SVG asset</a>.
+                    </p>
+                </article>
+            </section>
+        </main>
+
+        <footer class="project-footer">
+            <a href="./checklists/preflight.html">Open checklist</a>
+            <a href="../index.html">Back home</a>
+        </footer>
+    </body>
+</html>

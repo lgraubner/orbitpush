@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Northstar Launch Ops</title>
+        <meta
+            name="description"
+            content="Multi-page OrbitPush demo with nested routes, relative and absolute links, and shared assets"
+        />
+        <link rel="stylesheet" href="./assets/styles.css" />
+        <script src="./assets/app.js" defer></script>
+    </head>
+    <body data-page="home">
+        <header class="project-header">
+            <a class="brand" href="./index.html">Northstar Launch Ops</a>
+            <nav aria-label="Main navigation">
+                <a aria-current="page" href="./index.html">Home</a>
+                <a href="./pricing.html">Pricing</a>
+                <a href="./guides/">Guides</a>
+                <a href="./contact.html">Contact</a>
+                <a href="/guides/checklists/preflight.html">Absolute nested page</a>
+            </nav>
+        </header>
+
+        <main>
+            <section class="hero">
+                <div>
+                    <p class="eyebrow">Multi-page demo</p>
+                    <h1>Plenty of routes, still plain static HTML.</h1>
+                    <p class="lede">
+                        This sample exercises shared assets, nested indexes, relative and absolute
+                        links, and custom 404 handling.
+                    </p>
+                </div>
+                <figure class="hero-card">
+                    <img
+                        src="./assets/images/deployment-map.svg"
+                        alt="Diagram showing upload, validate, deploy, and live stages"
+                        width="520"
+                        height="320"
+                    />
+                    <figcaption>SVG asset loaded from a sibling directory</figcaption>
+                </figure>
+            </section>
+
+            <section class="card-grid" aria-label="Route checks">
+                <article class="card">
+                    <h2>Directory index redirect</h2>
+                    <p>Open <a href="./guides">guides</a> without the trailing slash.</p>
+                </article>
+                <article class="card">
+                    <h2>Nested page</h2>
+                    <p>
+                        Visit
+                        <a href="./guides/checklists/preflight.html">a deeper HTML file</a>
+                        with parent-relative asset references.
+                    </p>
+                </article>
+                <article class="card">
+                    <h2>Absolute links</h2>
+                    <p>
+                        Open <a href="/pricing.html?plan=pro#compare">pricing</a> from the project
+                        root.
+                    </p>
+                </article>
+            </section>
+        </main>
+
+        <footer class="project-footer">
+            <a href="./index.html?from=index-html">Test explicit index file</a>
+            <a href="/guides/index.html?from=absolute-index">Absolute nested index</a>
+            <a href="/missing-page">Trigger 404 page</a>
+        </footer>
+    </body>
+</html>

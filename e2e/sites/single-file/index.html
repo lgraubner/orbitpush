@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Launch Notes Express</title>
+        <meta
+            name="description"
+            content="Single-file OrbitPush demo with inline CSS, JS, query handling, and hash links"
+        />
+        <style>
+            :root {
+                color-scheme: light;
+                --bg: #f7f0e8;
+                --card: rgba(255, 255, 255, 0.76);
+                --ink: #1f2430;
+                --muted: #5f6470;
+                --line: rgba(31, 36, 48, 0.12);
+                --accent: #b84c2a;
+                --accent-strong: #872d12;
+                font-family: "Instrument Sans", "Avenir Next", ui-sans-serif, system-ui, sans-serif;
+                line-height: 1.5;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            html {
+                scroll-behavior: smooth;
+            }
+
+            body {
+                margin: 0;
+                color: var(--ink);
+                background:
+                    radial-gradient(circle at top left, #ffd7c8 0, transparent 32rem),
+                    linear-gradient(180deg, #fff8f3 0, var(--bg) 100%);
+            }
+
+            a {
+                color: inherit;
+                text-decoration-color: var(--accent);
+                text-decoration-thickness: 2px;
+                text-underline-offset: 0.22em;
+            }
+
+            .shell {
+                width: min(980px, calc(100% - 2rem));
+                margin: 0 auto;
+                padding: 1rem 0 4rem;
+            }
+
+            .nav,
+            .card-grid,
+            .notice-row {
+                display: grid;
+                gap: 1rem;
+            }
+
+            .nav {
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                margin-bottom: 1rem;
+            }
+
+            .hero,
+            .card,
+            .status {
+                background: var(--card);
+                border: 1px solid var(--line);
+                border-radius: 24px;
+                box-shadow: 0 1.1rem 3rem rgba(60, 42, 20, 0.08);
+            }
+
+            .hero {
+                padding: clamp(1.5rem, 4vw, 4rem);
+            }
+
+            .eyebrow,
+            .pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.45rem;
+                font-size: 0.82rem;
+                font-weight: 800;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+            }
+
+            .eyebrow::before,
+            .pill::before {
+                content: "";
+                width: 0.6rem;
+                height: 0.6rem;
+                border-radius: 999px;
+                background: var(--accent);
+            }
+
+            h1,
+            h2 {
+                line-height: 0.96;
+                letter-spacing: -0.05em;
+                margin: 0;
+            }
+
+            h1 {
+                max-width: 10ch;
+                font-size: clamp(2.8rem, 9vw, 6.8rem);
+            }
+
+            h2 {
+                font-size: clamp(1.5rem, 4vw, 2.25rem);
+            }
+
+            p {
+                max-width: 62ch;
+            }
+
+            .lede {
+                font-size: clamp(1.05rem, 2vw, 1.32rem);
+                color: var(--muted);
+            }
+
+            .actions,
+            .footer-links {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.9rem;
+            }
+
+            .button {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 0.85rem 1.15rem;
+                border-radius: 999px;
+                border: 1px solid transparent;
+                font-weight: 700;
+                text-decoration: none;
+            }
+
+            .button-primary {
+                color: #fff;
+                background: var(--accent-strong);
+            }
+
+            .button-secondary {
+                border-color: var(--line);
+                background: rgba(255, 255, 255, 0.7);
+            }
+
+            .card-grid {
+                grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+                margin: 1rem 0;
+            }
+
+            .card,
+            .status {
+                padding: 1.25rem;
+            }
+
+            .status strong {
+                display: block;
+                margin-bottom: 0.25rem;
+            }
+
+            .status[data-state="ready"] {
+                border-color: rgba(73, 126, 74, 0.24);
+            }
+
+            .status[data-state="ready"] .pill::before {
+                background: #4d8e4f;
+            }
+
+            code {
+                font-family: "SFMono-Regular", ui-monospace, "Cascadia Code", monospace;
+                font-size: 0.95em;
+            }
+
+            footer {
+                margin-top: 1.5rem;
+                color: var(--muted);
+            }
+
+            @media (max-width: 640px) {
+                .shell {
+                    width: min(100% - 1rem, 980px);
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="shell">
+            <nav class="nav" aria-label="Section links">
+                <a href="#overview">Overview</a>
+                <a href="#checks">Checks</a>
+                <a href="#faq">FAQ</a>
+                <a href="?ref=single-file#status">Reload with query</a>
+            </nav>
+
+            <main>
+                <section class="hero" id="overview">
+                    <span class="eyebrow">Single file demo</span>
+                    <h1>One HTML file, still enough to test the edges.</h1>
+                    <p class="lede">
+                        This page has no external assets. Everything is inline so it can be uploaded
+                        as a lone
+                        <code>.html</code> file and still exercise hash links, query params, event
+                        handlers, and user-facing UI states.
+                    </p>
+                    <div class="actions">
+                        <a class="button button-primary" href="#checks">Jump to checks</a>
+                        <a class="button button-secondary" href="#faq">Open FAQ section</a>
+                        <a class="button button-secondary" href="mailto:hello@example.com"
+                            >Email demo contact</a
+                        >
+                        <a class="button button-secondary" href="tel:+491234567890"
+                            >Call demo number</a
+                        >
+                    </div>
+                </section>
+
+                <section class="card-grid" id="checks" aria-label="Upload checks">
+                    <article class="card">
+                        <h2>Query state</h2>
+                        <p>
+                            Appends a small status message if the page loads with
+                            <code>?ref=...</code>.
+                        </p>
+                    </article>
+                    <article class="card">
+                        <h2>Hash navigation</h2>
+                        <p>
+                            Uses same-page anchors to test fragment navigation without requiring
+                            extra files.
+                        </p>
+                    </article>
+                    <article class="card">
+                        <h2>Inline script</h2>
+                        <p>
+                            Updates a small readiness panel so the uploaded page proves client
+                            JavaScript is executing.
+                        </p>
+                    </article>
+                </section>
+
+                <section class="status" id="status" data-state="loading" aria-live="polite">
+                    <span class="pill">Loading</span>
+                    <strong id="status-title">Checking page runtime</strong>
+                    <p id="status-copy">
+                        If JavaScript runs after deployment this panel will switch to ready.
+                    </p>
+                </section>
+
+                <section class="card-grid" id="faq" aria-label="Frequently asked questions">
+                    <article class="card">
+                        <h2>Can one file feel complete?</h2>
+                        <p>
+                            Yes. It is also a good smoke test for the fastest OrbitPush path: upload
+                            one HTML file and get a live URL quickly.
+                        </p>
+                    </article>
+                    <article class="card">
+                        <h2>What should fail here?</h2>
+                        <p>
+                            Not much. If this breaks, the most basic upload and publish path is not
+                            healthy.
+                        </p>
+                    </article>
+                    <article class="card">
+                        <h2>What is intentionally missing?</h2>
+                        <p>No images, no external CSS, no nested pages, and no build step.</p>
+                    </article>
+                </section>
+            </main>
+
+            <footer>
+                <div class="footer-links">
+                    <a href="#overview">Back to top</a>
+                    <a href="?ref=footer-link#status">Test query reload</a>
+                </div>
+            </footer>
+        </div>
+
+        <script>
+            const panel = document.querySelector("#status");
+            const title = document.querySelector("#status-title");
+            const copy = document.querySelector("#status-copy");
+            const params = new URLSearchParams(window.location.search);
+            const ref = params.get("ref");
+
+            window.setTimeout(() => {
+                panel.dataset.state = "ready";
+                panel.querySelector(".pill").textContent = "Ready";
+                title.textContent = "Inline JavaScript executed successfully";
+                copy.textContent = ref
+                    ? `Loaded with query parameter ref=${ref}`
+                    : "Loaded without a query parameter";
+            }, 220);
+        </script>
+    </body>
+</html>
