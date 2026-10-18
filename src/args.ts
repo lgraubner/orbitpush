@@ -1,6 +1,6 @@
 import mri from "mri";
 
-import { z } from "./zod.ts";
+import { issues, z } from "./zod.ts";
 
 const Argv = z.object({
   _: z.array(z.union([z.string(), z.number()])),
@@ -23,9 +23,7 @@ export function parseArgs(argv: string[]) {
     }),
   );
   if (!result.success) {
-    const problems = result.error.issues.map(
-      (issue) => `--${issue.path.join(".")}: ${issue.message}`,
-    );
+    const problems = issues(result.error).map((issue) => `--${issue}`);
     throw new Error(`Invalid arguments: ${problems.join("; ")}`);
   }
 

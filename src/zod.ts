@@ -5,3 +5,7 @@ import * as z from "zod/mini";
 z.config(en());
 
 export { z };
+
+export function issues(error: z.core.$ZodError) {
+  return error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
+}

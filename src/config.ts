@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 
 import { isMissing } from "./files.ts";
 import { errorMessage } from "./log.ts";
-import { z } from "./zod.ts";
+import { issues, z } from "./zod.ts";
 
 export const CONFIG_FILE = "orbitpush.json";
 export const SCHEMA_URL = "https://unpkg.com/orbitpush/schema.json";
@@ -45,15 +45,14 @@ export async function readConfig(): Promise<Config> {
 
   const result = ConfigSchema.safeParse(json);
   if (!result.success) {
-    const problems = result.error.issues.map(
-      (issue) => `${issue.path.join(".")}: ${issue.message}`,
-    );
-    throw new Error(`Invalid ${CONFIG_FILE}:\n  ${problems.join("\n  ")}`);
+    throw new Error(`Invalid ${CONFIG_FILE}:\n  ${issues(result.error).join("\n  ")}`);
   }
 
   return result.data;
 }
 
 export async function writeConfig(config: Config) {
-  await writeFile(CONFIG_FILE, `${JSON.stringify({ $schema: SCHEMA_URL, ...config }, null, 2)}\n`);
+  await writeFile(CONFIG_FILE, `${JSON.stringify({ $schema: SCHEMA_URL, ...config }, null, 2)}\n`, {
+    flag: "wx",
+  });
 }

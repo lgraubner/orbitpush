@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -29,11 +29,28 @@ function config(outputDir: string): Config {
   };
 }
 
+const kept = parseRedirects("/a /b").rules[0].Description;
+
 function fakeBunny({
   storageZone = { Id: 1, Name: "site", Password: "pw", StorageHostname: "storage.bunnycdn.com" },
-}: { storageZone?: Record<string, unknown> } = {}) {
-  const kept = parseRedirects("/a /b").rules[0].Description;
+  edgeRules = [
+    { Guid: "keep", Description: kept },
+    { Guid: "old", Description: "orbitpush 0000000000 /x /y 301" },
+    { Guid: "mine", Description: "created in dashboard" },
+  ],
+  slowAssets = false,
+  hostnames = [],
+  certificateFails = false,
+}: {
+  storageZone?: Record<string, unknown>;
+  edgeRules?: Record<string, unknown>[];
+  slowAssets?: boolean;
+  hostnames?: { Value: string; HasCertificate: boolean; ForceSSL: boolean }[];
+  certificateFails?: boolean;
+} = {}) {
+  const requests: string[] = [];
   const writes: string[] = [];
+  const uploads: string[] = [];
   const bodies: Record<string, unknown> = {};
 
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init = {}) => {
@@ -41,8 +58,18 @@ function fakeBunny({
     const method = init.method ?? "GET";
     const json = (value: unknown) => new Response(JSON.stringify(value));
 
+    requests.push(`${method} ${url}`);
     if (method !== "GET") writes.push(`${method} ${url}`);
     if (typeof init.body === "string") bodies[`${method} ${url}`] = JSON.parse(init.body);
+
+    if (method === "PUT") {
+      const path = url.replace("https://storage.bunnycdn.com/site/", "");
+      uploads.push(`start ${path}`);
+      await new Promise((resolve) =>
+        setTimeout(resolve, slowAssets && !path.endsWith(".html") ? 30 : 0),
+      );
+      uploads.push(`done ${path}`);
+    }
 
     if (url === "https://api.bunny.net/storagezone/1" && method === "GET") {
       return json(storageZone);
@@ -52,12 +79,8 @@ function fakeBunny({
       return json({
         Id: 2,
         Name: "site",
-        Hostnames: [],
-        EdgeRules: [
-          { Guid: "keep", Description: kept },
-          { Guid: "old", Description: "orbitpush 0000000000 /x /y 301" },
-          { Guid: "mine", Description: "created in dashboard" },
-        ],
+        Hostnames: hostnames,
+        EdgeRules: edgeRules,
       });
     }
 
@@ -75,10 +98,14 @@ function fakeBunny({
       ]);
     }
 
+    if (url.startsWith("https://api.bunny.net/pullzone/loadFreeCertificate") && certificateFails) {
+      return new Response(JSON.stringify({ Message: "DNS not set up" }), { status: 400 });
+    }
+
     return new Response(null, { status: 201 });
   });
 
-  return { writes, bodies };
+  return { requests, writes, bodies, uploads };
 }
 
 async function outputDir() {
@@ -153,4 +180,144 @@ test("deploy tells the user to build when the output directory is missing", asyn
     /Output directory ".*missing" not found\. Did you run the build\?/,
   );
   expect(writes).toEqual([]);
+});
+
+test("deploy keeps the file paths when outputDir starts with ./", async () => {
+  const dir = await outputDir();
+  const { writes } = fakeBunny();
+  const cwd = process.cwd();
+  process.chdir(dirname(dir));
+
+  try {
+    await deploy("key", config(`./${basename(dir)}`));
+  } finally {
+    process.chdir(cwd);
+  }
+
+  expect(writes).toContain("PUT https://storage.bunnycdn.com/site/index.html");
+  expect(writes).not.toContain("DELETE https://storage.bunnycdn.com/site/assets/app.js");
+});
+
+test("deploy starts uploading HTML only after every other upload has finished", async () => {
+  const dir = await outputDir();
+  await writeFile(join(dir, "assets", "app.css"), "new");
+  const { uploads } = fakeBunny({ slowAssets: true });
+
+  await deploy("key", config(dir));
+
+  expect(uploads.indexOf("done assets/app.css")).toBeLessThan(uploads.indexOf("start index.html"));
+  expect(uploads.indexOf("done assets/app.css")).toBeLessThan(uploads.indexOf("start 404.html"));
+});
+
+test("deploy creates a rule listed twice once and deletes a duplicate managed rule", async () => {
+  const dir = await outputDir();
+  await writeFile(join(dir, "_redirects"), "/a /b\n/c /d\n/c /d");
+  const { writes } = fakeBunny({
+    edgeRules: [
+      { Guid: "keep", Description: kept },
+      { Guid: "copy", Description: kept },
+    ],
+  });
+
+  await deploy("key", config(dir));
+
+  expect(writes.filter((w) => w.includes("/edgerules/"))).toEqual([
+    "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
+    "DELETE https://api.bunny.net/pullzone/2/edgerules/copy",
+  ]);
+});
+
+test("deploy enables exactly the configured delivery regions on the pull zone", async () => {
+  const dir = await outputDir();
+  const { bodies } = fakeBunny();
+
+  await deploy("key", { ...config(dir), geoZones: ["US", "ASIA"] });
+
+  expect(bodies["POST https://api.bunny.net/pullzone/2"]).toMatchObject({
+    EnableGeoZoneEU: false,
+    EnableGeoZoneUS: true,
+    EnableGeoZoneASIA: true,
+    EnableGeoZoneSA: false,
+    EnableGeoZoneAF: false,
+  });
+});
+
+test("deploy serves index.html for unknown paths in SPA mode", async () => {
+  const dir = await outputDir();
+  const { bodies } = fakeBunny();
+
+  await deploy("key", { ...config(dir), spa: true });
+
+  expect(bodies["POST https://api.bunny.net/storagezone/1"]).toMatchObject({
+    Rewrite404To200: true,
+    Custom404FilePath: "/index.html",
+  });
+});
+
+const domainRequests = (requests: string[]) =>
+  requests.filter((r) => /addHostname|loadFreeCertificate|setForceSSL/.test(r));
+
+test("deploy adds a new domain, requests its certificate and forces SSL", async () => {
+  const dir = await outputDir();
+  const { requests, bodies } = fakeBunny({
+    hostnames: [{ Value: "site.b-cdn.net", HasCertificate: true, ForceSSL: false }],
+  });
+
+  await deploy("key", { ...config(dir), domains: ["www.example.com"] });
+
+  expect(domainRequests(requests)).toEqual([
+    "POST https://api.bunny.net/pullzone/2/addHostname",
+    "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=www.example.com",
+    "POST https://api.bunny.net/pullzone/2/setForceSSL",
+  ]);
+  expect(bodies["POST https://api.bunny.net/pullzone/2/addHostname"]).toEqual({
+    Hostname: "www.example.com",
+  });
+  expect(bodies["POST https://api.bunny.net/pullzone/2/setForceSSL"]).toEqual({
+    Hostname: "www.example.com",
+    ForceSSL: true,
+  });
+});
+
+test("deploy forces SSL on a domain that has a certificate without requesting another", async () => {
+  const dir = await outputDir();
+  const { requests, bodies } = fakeBunny({
+    hostnames: [{ Value: "www.example.com", HasCertificate: true, ForceSSL: false }],
+  });
+
+  await deploy("key", { ...config(dir), domains: ["www.example.com"] });
+
+  expect(domainRequests(requests)).toEqual(["POST https://api.bunny.net/pullzone/2/setForceSSL"]);
+  expect(bodies["POST https://api.bunny.net/pullzone/2/setForceSSL"]).toEqual({
+    Hostname: "www.example.com",
+    ForceSSL: true,
+  });
+});
+
+test("deploy warns and skips Force SSL when the certificate cannot be obtained", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { requests, writes } = fakeBunny({
+    hostnames: [{ Value: "www.example.com", HasCertificate: false, ForceSSL: false }],
+    certificateFails: true,
+  });
+
+  await deploy("key", { ...config(dir), domains: ["www.example.com"] });
+
+  expect(domainRequests(requests)).toEqual([
+    "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=www.example.com",
+  ]);
+  expect(writes).toContain("POST https://api.bunny.net/pullzone/2/purgeCache");
+  expect(stderr.mock.calls.join("")).toContain("www.example.com");
+});
+
+test("deploy leaves a domain with certificate and Force SSL alone, matching case-insensitively", async () => {
+  const dir = await outputDir();
+  const { requests } = fakeBunny({
+    hostnames: [{ Value: "www.example.com", HasCertificate: true, ForceSSL: true }],
+  });
+
+  await deploy("key", { ...config(dir), domains: ["WWW.Example.com"] });
+
+  expect(domainRequests(requests)).toEqual([]);
 });

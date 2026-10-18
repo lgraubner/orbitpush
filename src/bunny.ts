@@ -1,5 +1,5 @@
 import { GEO_ZONES, type GeoZone } from "./config.ts";
-import { z } from "./zod.ts";
+import { issues, z } from "./zod.ts";
 
 export const API_KEY_URL = "https://dash.bunny.net/account/api-key";
 
@@ -102,22 +102,28 @@ export function storage(zone: StorageZone) {
     put: ({ path, data, checksum }: { path: string; data: Blob; checksum: string }) =>
       request("PUT", path, { body: data, headers: { Checksum: checksum.toUpperCase() } }),
     delete: (path: string) => request("DELETE", path),
-    async list(dir = ""): Promise<Map<string, string>> {
-      const response = await request("GET", dir);
-      const entries = parseResponse(
-        Listing,
-        await response.json().catch(() => undefined),
-        `GET /${dir}`,
-      );
+    async list() {
       const files = new Map<string, string>();
+      let dirs = [""];
 
-      await Promise.all(
-        entries.map(async (entry) => {
-          const path = dir + entry.ObjectName;
-          if (!entry.IsDirectory) files.set(path, entry.Checksum ?? "");
-          else for (const [p, c] of await this.list(`${path}/`)) files.set(p, c);
-        }),
-      );
+      while (dirs.length) {
+        const subdirs: string[] = [];
+        await pool(dirs, 8, async (dir) => {
+          const response = await request("GET", dir);
+          const entries = parseResponse(
+            Listing,
+            await response.json().catch(() => undefined),
+            `GET /${dir}`,
+          );
+
+          for (const entry of entries) {
+            const path = dir + entry.ObjectName;
+            if (entry.IsDirectory) subdirs.push(`${path}/`);
+            else files.set(path, entry.Checksum ?? "");
+          }
+        });
+        dirs = subdirs;
+      }
 
       return files;
     },
@@ -127,11 +133,8 @@ export function storage(zone: StorageZone) {
 function parseResponse<T>(schema: z.ZodMiniType<T>, json: unknown, request: string) {
   const result = schema.safeParse(json);
   if (!result.success) {
-    const problems = result.error.issues.map(
-      (issue) => `${issue.path.join(".")}: ${issue.message}`,
-    );
     throw new Error(
-      `bunny.net returned an unexpected response for ${request}: ${problems.join("; ")}`,
+      `bunny.net returned an unexpected response for ${request}: ${issues(result.error).join("; ")}`,
     );
   }
 
@@ -151,4 +154,14 @@ async function errorText(response: Response) {
   if (body.success) return `${body.data.Message} (HTTP ${response.status})`;
 
   return `${text.slice(0, 200) || "no details"} (HTTP ${response.status})`;
+}
+
+export async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<unknown>) {
+  let next = 0;
+
+  await Promise.all(
+    Array.from({ length: Math.min(size, items.length) }, async () => {
+      while (next < items.length) await fn(items[next++]);
+    }),
+  );
 }

@@ -76,3 +76,15 @@ test("rule hashes stay stable across releases, so deployed managed rules are kep
   expect(parseRedirects("/a /b").rules[0].Description).toBe("orbitpush cac3b5ea61 /a /b 301");
   expect(parseHeaders("/*\n  X-A: 1").rules[0].Description).toBe("orbitpush 93842498ac headers /*");
 });
+
+test("a redirect target may carry a query string", () => {
+  const { rules, warnings } = parseRedirects("/a /b?ref=x\n/c https://example.com/?a=b 302");
+  expect(rules.map((r) => r.ActionParameter1)).toEqual(["/b?ref=x", "https://example.com/?a=b"]);
+  expect(warnings).toEqual([]);
+});
+
+test("a _headers path without indented headers warns instead of vanishing", () => {
+  const { rules, warnings } = parseHeaders("/*\nX-Frame-Options: DENY\n");
+  expect(rules).toEqual([]);
+  expect(warnings).toHaveLength(2);
+});

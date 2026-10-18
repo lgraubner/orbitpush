@@ -37,6 +37,8 @@ try {
 
   if (args.version) {
     process.stdout.write(`${version}\n`);
+  } else if (args.help || !args.command) {
+    process.stdout.write(`${help}\n`);
   } else if (args.command === "init") {
     await init(args.flags, interactive);
   } else if (args.command === "deploy") {
@@ -44,8 +46,8 @@ try {
     await deploy(apiKeyFromEnv(), await readConfig());
     log.success(`Deployed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   } else {
-    process.stdout.write(`${help}\n`);
-    if (args.command && !args.help) process.exitCode = 2;
+    process.stderr.write(`${help}\n`);
+    process.exitCode = 2;
   }
 } catch (error) {
   if (error instanceof Error && error.name === "ExitPromptError") {

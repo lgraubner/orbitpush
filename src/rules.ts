@@ -91,11 +91,11 @@ export function parseRedirects(text: string): Parsed {
     if (tokens.length < 2) return skip("missing target");
 
     const [from, to, statusToken = "301", ...rest] = tokens;
-    if (to.includes("=")) return skip("query parameter matching is not supported");
+    if (/^[^/]*=/.test(to)) return skip("query parameter matching is not supported");
     if (rest.length) return skip("conditions are not supported");
 
     const status = Number(statusToken.replace(/!$/, ""));
-    if (status === 200 && /^\/\*$/.test(from) && /^\/index\.html$/.test(to)) {
+    if (status === 200 && from === "/*" && to === "/index.html") {
       return skip('set "spa": true in orbitpush.json instead');
     }
 
@@ -159,7 +159,10 @@ export function parseHeaders(text: string): Parsed {
       ActionParameter1: name,
       ActionParameter2: values.join(", "),
     }));
-    if (!isNonEmpty(actions)) continue;
+    if (!isNonEmpty(actions)) {
+      warnings.push(`_headers:${n} skipped (no indented "Name: value" lines below it): ${path}`);
+      continue;
+    }
 
     try {
       const { pattern } = toPattern(path);

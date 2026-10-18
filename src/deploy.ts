@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { openAsBlob } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { join, sep } from "node:path";
+import { join, relative, sep } from "node:path";
 
-import { api, apiJson, geoZoneFlags, PullZone, StorageZone, storage } from "./bunny.ts";
+import { api, apiJson, geoZoneFlags, pool, PullZone, StorageZone, storage } from "./bunny.ts";
 import type { Config } from "./config.ts";
 import { isMissing, readIfExists } from "./files.ts";
 import { errorMessage, log } from "./log.ts";
@@ -28,14 +28,23 @@ export async function deploy(apiKey: string, config: Config) {
   const changed = [...files].filter(
     ([path, file]) => remote.get(path)?.toUpperCase() !== file.checksum,
   );
-  changed.sort(([a], [b]) => htmlLast(a, b));
   const stale = [...remote.keys()].filter((path) => !files.has(path));
 
   log.step(`Uploading ${changed.length} of ${files.size} files`);
-  await pool(changed, 8, async ([path, file]) => {
+  const upload = async ([path, file]: (typeof changed)[number]) => {
     await bucket.put({ path, data: await openAsBlob(file.absolute), checksum: file.checksum });
     log.detail(path);
-  });
+  };
+  await pool(
+    changed.filter(([path]) => !isHtml(path)),
+    8,
+    upload,
+  );
+  await pool(
+    changed.filter(([path]) => isHtml(path)),
+    8,
+    upload,
+  );
 
   await applySettings(apiKey, { config, has404: files.has("404.html") });
   await syncRules(apiKey, config.pullZoneId, rules);
@@ -63,10 +72,7 @@ async function readOutput(dir: string) {
     if (!entry.isFile()) continue;
 
     const absolute = join(entry.parentPath, entry.name);
-    const path = absolute
-      .slice(dir.replace(/[\\/]$/, "").length + 1)
-      .split(sep)
-      .join("/");
+    const path = relative(dir, absolute).split(sep).join("/");
     if (RULE_FILES.includes(path)) continue;
 
     const checksum = createHash("sha256")
@@ -79,8 +85,8 @@ async function readOutput(dir: string) {
   return files;
 }
 
-function htmlLast(a: string, b: string) {
-  return Number(a.endsWith(".html")) - Number(b.endsWith(".html"));
+function isHtml(path: string) {
+  return path.endsWith(".html");
 }
 
 async function readRules(dir: string) {
@@ -171,11 +177,16 @@ async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) 
     method: "GET",
     path: `/pullzone/${pullZoneId}`,
   });
-  const existing = pullZone.EdgeRules.filter((r) => r.Description?.startsWith(RULE_PREFIX));
-  const existingDescriptions = new Set(existing.map((r) => r.Description));
-  const wanted = new Set(rules.map((r) => r.Description));
-  const added = rules.filter((r) => !existingDescriptions.has(r.Description));
-  const removed = existing.filter((r) => !wanted.has(r.Description ?? ""));
+  const wanted = new Map(rules.map((r) => [r.Description, r]));
+  const kept = new Set<string>();
+  const removed = pullZone.EdgeRules.filter((r) => {
+    if (!r.Description?.startsWith(RULE_PREFIX)) return false;
+    if (!wanted.has(r.Description) || kept.has(r.Description)) return true;
+
+    kept.add(r.Description);
+    return false;
+  });
+  const added = [...wanted.values()].filter((r) => !kept.has(r.Description));
   if (!added.length && !removed.length) return;
 
   log.step(`Updating edge rules (+${added.length} -${removed.length})`);
@@ -191,14 +202,4 @@ async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) 
   for (const rule of removed) {
     await api(apiKey, { method: "DELETE", path: `/pullzone/${pullZoneId}/edgerules/${rule.Guid}` });
   }
-}
-
-async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<unknown>) {
-  let next = 0;
-
-  await Promise.all(
-    Array.from({ length: Math.min(size, items.length) }, async () => {
-      while (next < items.length) await fn(items[next++]);
-    }),
-  );
 }

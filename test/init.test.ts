@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,6 +24,7 @@ afterEach(async () => {
 
 function fakeBunny({ pullZoneTaken = false } = {}) {
   const writes: string[] = [];
+  const bodies: Record<string, unknown> = {};
 
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init = {}) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -31,6 +32,7 @@ function fakeBunny({ pullZoneTaken = false } = {}) {
     const json = (value: unknown) => new Response(JSON.stringify(value));
 
     if (method !== "GET") writes.push(`${method} ${url}`);
+    if (typeof init.body === "string") bodies[`${method} ${url}`] = JSON.parse(init.body);
     if (url === "https://api.bunny.net/storagezone" && method === "POST") return json({ Id: 1 });
     if (url === "https://api.bunny.net/pullzone" && method === "POST") {
       return pullZoneTaken
@@ -45,11 +47,11 @@ function fakeBunny({ pullZoneTaken = false } = {}) {
     return new Response(null, { status: 204 });
   });
 
-  return writes;
+  return { writes, bodies };
 }
 
 test("init creates both zones and writes orbitpush.json", async () => {
-  const writes = fakeBunny();
+  const { writes } = fakeBunny();
 
   await init({ name: "site", yes: true }, false);
 
@@ -66,7 +68,7 @@ test("init creates both zones and writes orbitpush.json", async () => {
 });
 
 test("init deletes both zones when orbitpush.json cannot be written", async () => {
-  const writes = fakeBunny();
+  const { writes } = fakeBunny();
   await chmod(dir, 0o555);
 
   await expect(init({ name: "site", yes: true }, false)).rejects.toMatchObject({ code: "EACCES" });
@@ -79,7 +81,7 @@ test("init deletes both zones when orbitpush.json cannot be written", async () =
 });
 
 test("init deletes the storage zone when the pull zone cannot be created", async () => {
-  const writes = fakeBunny({ pullZoneTaken: true });
+  const { writes } = fakeBunny({ pullZoneTaken: true });
 
   await expect(init({ name: "site", yes: true }, false)).rejects.toThrow();
   expect(writes).toEqual([
@@ -87,4 +89,46 @@ test("init deletes the storage zone when the pull zone cannot be created", async
     "POST https://api.bunny.net/pullzone",
     "DELETE https://api.bunny.net/storagezone/1",
   ]);
+});
+
+test("init creates the storage zone with the chosen name and regions", async () => {
+  const { bodies } = fakeBunny();
+
+  await init({ name: "site", region: "ny", yes: true }, false);
+
+  const written = JSON.parse(await readFile("orbitpush.json", "utf8")) as Record<string, unknown>;
+  expect(written.region).toBe("NY");
+  expect(bodies["POST https://api.bunny.net/storagezone"]).toMatchObject({
+    Name: "site",
+    Region: "NY",
+    ReplicationRegions: written.replicationRegions,
+  });
+});
+
+test("init creates the pull zone on the new storage zone with the default delivery regions", async () => {
+  const { bodies } = fakeBunny();
+
+  await init({ name: "site", yes: true }, false);
+
+  const written = JSON.parse(await readFile("orbitpush.json", "utf8")) as Record<string, unknown>;
+  expect(written.geoZones).toEqual(["EU", "US"]);
+  expect(bodies["POST https://api.bunny.net/pullzone"]).toMatchObject({
+    Name: "site",
+    OriginType: 2,
+    StorageZoneId: 1,
+    EnableGeoZoneEU: true,
+    EnableGeoZoneUS: true,
+    EnableGeoZoneASIA: false,
+    EnableGeoZoneSA: false,
+    EnableGeoZoneAF: false,
+  });
+});
+
+test("init refuses to run when orbitpush.json exists and sends nothing to bunny.net", async () => {
+  fakeBunny();
+  await writeFile("orbitpush.json", "keep me");
+
+  await expect(init({ name: "site", yes: true }, false)).rejects.toThrow(/orbitpush\.json/);
+  expect(fetch).not.toHaveBeenCalled();
+  expect(await readFile("orbitpush.json", "utf8")).toBe("keep me");
 });
