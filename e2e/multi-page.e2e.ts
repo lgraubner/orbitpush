@@ -143,9 +143,11 @@ test("an absolute source URL redirects on its hostname only", async () => {
 test("redirects when the country matches E2E_COUNTRY, the country this runs from", async () => {
   test.skip(!process.env.E2E_COUNTRY, "Set E2E_COUNTRY to the two-letter code of your location");
 
-  const response = await s.get(`${s.cdnUrl}/geo-here`);
-  expect(response.status).toBe(302);
-  expect(response.headers.location).toBe(`${s.cdnUrl}/pricing.html`);
+  for (const path of ["/geo-here", "/geo-many"]) {
+    const response = await s.get(`${s.cdnUrl}${path}`);
+    expect(response.status, path).toBe(302);
+    expect(response.headers.location, path).toBe(`${s.cdnUrl}/pricing.html`);
+  }
 });
 
 test("skips a redirect whose country does not match and a 200 rewrite", async () => {

@@ -71,15 +71,15 @@ Commit this file. It never contains the API key.
 
 Settings are applied on every deploy, so you can change them later:
 
-| Field                | Notes                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------- |
-| `outputDir`          | Directory that gets deployed.                                                                           |
-| `domain`             | Optional. Custom domain, added with SSL. Removing it does **not** remove it from bunny.net.             |
-| `aliases`            | Optional. Hostnames added with SSL that 301-redirect every path and query to `domain`. Need a `domain`. |
-| `region`             | Main storage region. Fixed after `init`.                                                                |
-| `replicationRegions` | Can only be added. bunny.net does not support removing replication regions.                             |
-| `geoZones`           | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`. At least one.                                     |
-| `trailingSlash`      | Optional. `always`, `never` or `ignore`, see [Trailing slashes](#trailing-slashes).                     |
+| Field                | Notes                                                                                                                                                                                                    |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `outputDir`          | Directory that gets deployed.                                                                                                                                                                            |
+| `domain`             | Optional. Custom domain, added with SSL. Removing it does **not** remove it from bunny.net.                                                                                                              |
+| `aliases`            | Optional. Hostnames added with SSL that 301-redirect every path and query to `domain`. Need a `domain`. At most 8: bunny.net allows 10 hostnames per pull zone, `<name>.b-cdn.net` and `domain` included |
+| `region`             | Main storage region. Fixed after `init`.                                                                                                                                                                 |
+| `replicationRegions` | Can only be added. bunny.net does not support removing replication regions.                                                                                                                              |
+| `geoZones`           | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`. At least one.                                                                                                                                      |
+| `trailingSlash`      | Optional. `always`, `never` or `ignore`, see [Trailing slashes](#trailing-slashes).                                                                                                                      |
 
 ### Domains and search engines
 
@@ -105,7 +105,7 @@ Rules created by orbitpush have a description that starts with `orbitpush <hash>
 
 Unsupported lines print a warning and are skipped. They do not fail the deploy.
 
-bunny.net allows 50 edge rules per pull zone by default; bunny.net support can raise the limit. Besides one rule per redirect line and per `_headers` block, orbitpush adds one per alias, one for noindex while `domain` is set, one for the [trailing slash](#trailing-slashes) and one while the site is disabled.
+bunny.net allows 50 edge rules per pull zone by default; bunny.net support can raise the limit. Besides one rule per redirect line and per `_headers` block, orbitpush adds one per alias, one for noindex while `domain` is set, one for the [trailing slash](#trailing-slashes) and one while the site is disabled. Rules created in the dashboard count too. bunny.net accepts no change to a full zone, so a deploy can use 49 rules; when it would need more, it fails before uploading anything and says how many rules it needs.
 
 ### `_redirects`
 
@@ -119,31 +119,31 @@ https://example.com/*  https://www.example.com/:splat  301!
 
 Compared with Netlify's [redirect options](https://docs.netlify.com/manage/routing/redirects/redirect-options/), section by section:
 
-| Netlify feature                                                    | orbitpush | Notes                                                                                                                  |
-| ------------------------------------------------------------------ | --------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Status `301` (default) and `302`                                   | ✅        |                                                                                                                        |
-| Status `303`, `307`, `308`                                         | ⚠️        | bunny.net serves only `301` and `302`: `303` and `307` are sent as `302`, `308` as `301`, with a warning               |
-| Status `404` for a path (`/shop /closed 404`)                      | ❌        | Skipped with a warning                                                                                                 |
-| Status `200` rewrites and proxies                                  | ❌        | A storage zone can't serve another path. Only `/* /index.html 200` works, as [SPA mode](#spa-mode)                     |
-| Custom `404.html`                                                  | ✅        | See [404 page](#404-page)                                                                                              |
-| 404 pages per path (`/en/* /en/404.html 404`)                      | ❌        | Only the global 404 page                                                                                               |
-| Force with `!`                                                     | ✅        | Accepted, and every redirect behaves as forced                                                                         |
-| Shadowing: a redirect without `!` only applies if no file exists   | ❌        | Edge rules run before the storage zone is asked                                                                        |
-| Splats: `*` at the end, `:splat` in the target                     | ✅        | `*` in the middle of a path or inside a segment (`/a/*/b`, `/file-*.js`) is skipped, as on Netlify                     |
-| Rule order: the first matching redirect wins                       | ✅        |                                                                                                                        |
-| Placeholders (`:name`)                                             | ✅        | As whole segments only: `/a-:id` is skipped                                                                            |
-| Query parameter matching (`/store id=:id /blog/:id`)               | ❌        | Skipped with a warning                                                                                                 |
-| Query string passed on to the target                               | ⚠️        | Only when the target ends in `:splat` or a placeholder: `/docs/a?x=1` goes to `…/a?x=1`, but `/old?x=1` goes to `/new` |
-| Trailing slash: a rule matches with and without it                 | ✅        |                                                                                                                        |
-| Pretty URLs: `/about` redirects to `/about/`                       | ✅        | [`trailingSlash`](#trailing-slashes) `always`, the default                                                             |
-| Pretty URLs: `/about.html` is served at `/about/`                  | ❌        | A storage zone can't serve another path                                                                                |
-| Domain-level redirects (`https://blog.example.com/* …`)            | ✅        | One rule matches both `http` and `https`                                                                               |
-| Proxy to another host (`… https://backend.example.com/:splat 200`) | ❌        |                                                                                                                        |
-| `Country=`                                                         | ✅        | Two-letter codes. Several `Country=` conditions on one line match any of their countries                               |
-| `Language=`                                                        | ❌        | Skipped with a warning                                                                                                 |
-| `Role=`                                                            | ❌        | Needs Netlify Identity                                                                                                 |
-| `Cookie=`                                                          | ❌        | Skipped with a warning                                                                                                 |
-| Redirects in `netlify.toml`                                        | ❌        | Only `_redirects` is read                                                                                              |
+| Netlify feature                                                    | orbitpush | Notes                                                                                                                                                                      |
+| ------------------------------------------------------------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Status `301` (default) and `302`                                   | ✅        |                                                                                                                                                                            |
+| Status `303`, `307`, `308`                                         | ⚠️        | bunny.net serves only `301` and `302`: `303` and `307` are sent as `302`, `308` as `301`, with a warning                                                                   |
+| Status `404` for a path (`/shop /closed 404`)                      | ❌        | Skipped with a warning                                                                                                                                                     |
+| Status `200` rewrites and proxies                                  | ❌        | A storage zone can't serve another path. Only `/* /index.html 200` works, as [SPA mode](#spa-mode)                                                                         |
+| Custom `404.html`                                                  | ✅        | See [404 page](#404-page)                                                                                                                                                  |
+| 404 pages per path (`/en/* /en/404.html 404`)                      | ❌        | Only the global 404 page                                                                                                                                                   |
+| Force with `!`                                                     | ✅        | Accepted, and every redirect behaves as forced                                                                                                                             |
+| Shadowing: a redirect without `!` only applies if no file exists   | ❌        | Edge rules run before the storage zone is asked                                                                                                                            |
+| Splats: `*` at the end, `:splat` in the target                     | ✅        | `*` in the middle of a path or inside a segment (`/a/*/b`, `/file-*.js`) is skipped, as on Netlify                                                                         |
+| Rule order: the first matching redirect wins                       | ✅        |                                                                                                                                                                            |
+| Placeholders (`:name`)                                             | ✅        | As whole segments only: `/a-:id` is skipped                                                                                                                                |
+| Query parameter matching (`/store id=:id /blog/:id`)               | ❌        | Skipped with a warning                                                                                                                                                     |
+| Query string passed on to the target                               | ⚠️        | Only when the target ends in `:splat` or a placeholder: `/docs/a?x=1` goes to `…/a?x=1`, but `/old?x=1` goes to `/new`                                                     |
+| Trailing slash: a rule matches with and without it                 | ✅        |                                                                                                                                                                            |
+| Pretty URLs: `/about` redirects to `/about/`                       | ✅        | [`trailingSlash`](#trailing-slashes) `always`, the default                                                                                                                 |
+| Pretty URLs: `/about.html` is served at `/about/`                  | ❌        | A storage zone can't serve another path                                                                                                                                    |
+| Domain-level redirects (`https://blog.example.com/* …`)            | ✅        | One rule matches both `http` and `https`                                                                                                                                   |
+| Proxy to another host (`… https://backend.example.com/:splat 200`) | ❌        |                                                                                                                                                                            |
+| `Country=`                                                         | ✅        | Two-letter codes. Several `Country=` conditions on one line match any of their countries. Every 5 countries take one edge rule, because a bunny.net rule matches at most 5 |
+| `Language=`                                                        | ❌        | Skipped with a warning                                                                                                                                                     |
+| `Role=`                                                            | ❌        | Needs Netlify Identity                                                                                                                                                     |
+| `Cookie=`                                                          | ❌        | Skipped with a warning                                                                                                                                                     |
+| Redirects in `netlify.toml`                                        | ❌        | Only `_redirects` is read                                                                                                                                                  |
 
 A relative target (`/new`) redirects on the hostname that was requested.
 

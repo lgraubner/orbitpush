@@ -19,6 +19,7 @@ import { errorMessage, log } from "./log.ts";
 import {
   DISABLED_RULE,
   domainRules,
+  MAX_EDGE_RULES,
   type EdgeRule,
   parseHeaders,
   parseRedirects,
@@ -43,6 +44,8 @@ export async function deploy(apiKey: string, config: Config) {
     ...fileRules,
     ...trailingSlashRule(config.trailingSlash ?? (spa ? "ignore" : "always")),
   ];
+
+  await checkRuleLimit(apiKey, config.pullZoneId, rules);
 
   log.step("Comparing with storage zone");
   const bucket = storage(zone);
@@ -197,6 +200,20 @@ export async function ensureDomains(apiKey: string, config: Config) {
   return cdnHost;
 }
 
+async function checkRuleLimit(apiKey: string, pullZoneId: number, rules: EdgeRule[]) {
+  const pullZone = await getPullZone(apiKey, pullZoneId);
+  const unmanaged = pullZone.EdgeRules.filter(
+    (r) => !r.Description?.startsWith(RULE_PREFIX) || r.Description === DISABLED_RULE,
+  );
+  const managed = new Set(rules.map((r) => r.Description)).size;
+  // bunny.net rejects every edge rule write on a full zone, updates included
+  if (managed + unmanaged.length < MAX_EDGE_RULES) return;
+
+  throw new Error(
+    `This deploy needs ${managed + unmanaged.length} edge rules (${managed} from orbitpush, ${unmanaged.length} others on the pull zone). bunny.net allows ${MAX_EDGE_RULES} edge rules per pull zone and accepts no change to a full one, so a deploy can use ${MAX_EDGE_RULES - 1}. Remove lines from _redirects or blocks from _headers, or ask bunny.net support to raise the limit.`,
+  );
+}
+
 async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) {
   const pullZone = await getPullZone(apiKey, pullZoneId);
   if (pullZone.EdgeRules.some((r) => r.Description === DISABLED_RULE)) {
@@ -225,6 +242,18 @@ async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) 
   const added = writes.length - kept.size;
   log.step(`Updating edge rules (+${added} ~${kept.size} -${removed.length})`);
 
+  const remove = async () => {
+    for (const rule of removed) {
+      await api(apiKey, {
+        method: "DELETE",
+        path: `/pullzone/${pullZoneId}/edgerules/${rule.Guid}`,
+      });
+    }
+  };
+  // bunny.net rejects every write on a full zone, so delete first when adding first would fill it
+  const deleteFirst = pullZone.EdgeRules.length + added >= MAX_EDGE_RULES;
+  if (deleteFirst) await remove();
+
   for (const rule of writes) {
     await api(apiKey, {
       method: "POST",
@@ -233,7 +262,5 @@ async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) 
     });
   }
 
-  for (const rule of removed) {
-    await api(apiKey, { method: "DELETE", path: `/pullzone/${pullZoneId}/edgerules/${rule.Guid}` });
-  }
+  if (!deleteFirst) await remove();
 }

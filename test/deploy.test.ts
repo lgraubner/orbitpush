@@ -608,3 +608,70 @@ test("deploy strips the trailing slash with trailingSlash never, except with a q
   expect(rule.TriggerMatchingType).toBe(1);
   expect(rule.Triggers).toContainEqual({ Type: 6, PatternMatchingType: 2, PatternMatches: ["*"] });
 });
+
+const redirectLines = (count: number, prefix = "r") =>
+  Array.from({ length: count }, (_, i) => `/${prefix}${i} /b`).join("\n");
+
+test("deploy fails before any write when the rules need a full zone, which bunny.net no longer writes to", async () => {
+  const dir = await outputDir();
+  await writeFile(join(dir, "_redirects"), redirectLines(49));
+  const { writes } = fakeBunny({
+    edgeRules: [{ Guid: "mine", Description: "created in dashboard", OrderIndex: 0 }],
+  });
+
+  await expect(deploy("key", config(dir))).rejects.toThrow(/50 edge rules/);
+  expect(writes).toEqual([]);
+});
+
+test("deploy accepts 49 edge rules, counting the ones from the dashboard", async () => {
+  const dir = await outputDir();
+  await writeFile(join(dir, "_redirects"), redirectLines(48));
+  const { edgeRuleWrites } = fakeBunny({
+    edgeRules: [{ Guid: "mine", Description: "created in dashboard", OrderIndex: 0 }],
+  });
+
+  await deploy("key", config(dir));
+
+  expect(edgeRuleWrites).toHaveLength(48);
+});
+
+test("deploy deletes removed rules first when adding first would fill the zone", async () => {
+  const dir = await outputDir();
+  await writeFile(join(dir, "_redirects"), `${redirectLines(48)}\n/new /b`);
+  const old = parseRedirects(`${redirectLines(48)}\n/gone /b`).rules;
+  const { writes } = fakeBunny({
+    edgeRules: old.map((r, i) => ({ Guid: `g${i}`, Description: r.Description, OrderIndex: i })),
+  });
+
+  await deploy("key", config(dir));
+
+  const ruleWrites = writes.filter((w) => w.includes("/edgerules/"));
+  expect(ruleWrites[0]).toBe("DELETE https://api.bunny.net/pullzone/2/edgerules/g48");
+  expect(ruleWrites).toHaveLength(50);
+});
+
+test("deploy frees a zone left full by an earlier version once a line is removed", async () => {
+  const dir = await outputDir();
+  await writeFile(join(dir, "_redirects"), redirectLines(49));
+  const old = parseRedirects(redirectLines(50)).rules;
+  const { writes } = fakeBunny({
+    edgeRules: old.map((r, i) => ({ Guid: `g${i}`, Description: r.Description, OrderIndex: i })),
+  });
+
+  await deploy("key", config(dir));
+
+  const ruleWrites = writes.filter((w) => w.includes("/edgerules/"));
+  expect(ruleWrites[0]).toBe("DELETE https://api.bunny.net/pullzone/2/edgerules/g49");
+});
+
+test("deploy adds new rules before deleting old ones while the zone has room", async () => {
+  const dir = await outputDir();
+  await writeFile(join(dir, "_redirects"), "/a /b\n/new /b");
+  const { writes } = fakeBunny();
+
+  await deploy("key", config(dir));
+
+  const ruleWrites = writes.filter((w) => w.includes("/edgerules/"));
+  expect(ruleWrites.at(-1)).toMatch(/^DELETE /);
+  expect(ruleWrites[0]).toMatch(/^POST /);
+});

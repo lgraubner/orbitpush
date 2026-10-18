@@ -12,6 +12,9 @@ const QUERY_STRING = 6;
 const MATCH_NONE = 2;
 const MATCH_ALL = 1;
 const COUNTRY_CONDITION = /^Country=([a-z]{2}(?:,[a-z]{2})*)$/i;
+// bunny.net's default limits: 50 edge rules per pull zone and 5 patterns per trigger
+export const MAX_EDGE_RULES = 50;
+const MAX_PATTERNS = 5;
 // bunny.net serves only 301 and 302: it rejects 303 and serves 308 as 301
 const SERVED_STATUS = new Map([
   [301, 301],
@@ -271,18 +274,25 @@ export function parseRedirects(text: string): Parsed & { spa: boolean } {
       });
       // bunny.net rejects a relative redirect target as "not a valid URL"
       const absolute = target.startsWith("/") ? `https://%{Url.Hostname}${target}` : target;
-      rules.push(
-        rule({
-          description: [from, to, served, ...conditions].join(" "),
-          pattern,
-          conditions: countries.length
-            ? [{ Type: COUNTRY_CODE, PatternMatchingType: 0, PatternMatches: countries }]
-            : [],
-          actions: [
-            { ActionType: REDIRECT, ActionParameter1: absolute, ActionParameter2: String(served) },
-          ],
-        }),
-      );
+      const groups = countries.length ? chunk(countries, MAX_PATTERNS) : [[]];
+      for (const group of groups) {
+        rules.push(
+          rule({
+            description: [from, to, served, ...conditions].join(" "),
+            pattern,
+            conditions: group.length
+              ? [{ Type: COUNTRY_CODE, PatternMatchingType: 0, PatternMatches: group }]
+              : [],
+            actions: [
+              {
+                ActionType: REDIRECT,
+                ActionParameter1: absolute,
+                ActionParameter2: String(served),
+              },
+            ],
+          }),
+        );
+      }
       if (served !== status) {
         warnings.push(`_redirects:${n} status ${status} is sent as ${served}: ${line}`);
       }
@@ -380,6 +390,12 @@ function lines(text: string): [number, string, boolean][] {
     .split(/\r?\n/)
     .map((raw, i): [number, string, boolean] => [i + 1, raw.trim(), /^\s/.test(raw)])
     .filter(([, line]) => line && !line.startsWith("#"));
+}
+
+function chunk<T>(items: T[], size: number) {
+  return Array.from({ length: Math.ceil(items.length / size) }, (_, i) =>
+    items.slice(i * size, (i + 1) * size),
+  );
 }
 
 function isNonEmpty<T>(items: T[]): items is [T, ...T[]] {

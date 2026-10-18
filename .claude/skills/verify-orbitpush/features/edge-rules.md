@@ -34,7 +34,8 @@ Preconditions:
 - Offline proves which rules orbitpush sends, not that bunny.net's Lua patterns match. `npm run test:e2e` proves the patterns, redirects and headers live.
 - Edge rules go live one by one, 2–6 s after deploy, so a check right after deploy can see some rules and not others. Wait for the rule written last.
 - bunny.net caches responses across hostnames, including headers set by edge rules, unless `EnableHostnameVary` is on. Deploy turns it on.
-- A trigger takes at most 5 patterns, a rule at most 5 triggers, and a pull zone holds 50 edge rules by default.
+- A trigger takes at most 5 patterns, a rule at most 5 triggers, and a pull zone holds 50 edge rules by default. On a full zone bunny.net rejects every edge rule write, updates included, so deploy allows 49 and deletes first when adding first would fill the zone.
+- A pull zone holds 10 hostnames by default, `<name>.b-cdn.net` included, so `aliasProblem()` allows 8 aliases.
 - bunny.net rejects a whole rule with HTTP 400 when it sets `Server`, `Content-Length`, `Accept-Ranges`, `Connection`, `Date` or a `CDN-` header. `parseHeaders()` skips them.
 - Set Response Header rules apply to 404 responses and to redirect responses.
 - A redirect can trigger on a response header (trigger `Type: 2`, `Parameter1: "Content-Type"`). The trailing slash rule uses it to redirect only HTML, so files without an extension are served.

@@ -83,6 +83,16 @@ test("rejects an empty geoZones list, which would deliver the site nowhere", asy
   await expect(readConfig()).rejects.toThrow(/geoZones/);
 });
 
+test("reads 8 aliases, the most bunny.net's 10 hostnames per pull zone leave room for", async () => {
+  const aliases = Array.from({ length: 8 }, (_, i) => `a${i}.example.com`);
+  await writeFile(
+    "orbitpush.json",
+    JSON.stringify({ ...valid, domain: "www.example.com", aliases }),
+  );
+
+  await expect(readConfig()).resolves.toMatchObject({ aliases });
+});
+
 test("reads aliases next to the domain", async () => {
   await writeFile("orbitpush.json", JSON.stringify({ ...valid, aliases: ["example.com"] }));
 
@@ -92,6 +102,13 @@ test("reads aliases next to the domain", async () => {
 test.each([
   ["without a domain to redirect to", { domain: undefined, aliases: ["example.com"] }],
   ["that repeat the domain", { domain: "www.example.com", aliases: ["WWW.example.com"] }],
+  [
+    "beyond the 8 that fit into bunny.net's 10 hostnames per pull zone",
+    {
+      domain: "www.example.com",
+      aliases: Array.from({ length: 9 }, (_, i) => `a${i}.example.com`),
+    },
+  ],
 ])("rejects aliases %s", async (_, fields) => {
   await writeFile("orbitpush.json", JSON.stringify({ ...valid, ...fields }));
 

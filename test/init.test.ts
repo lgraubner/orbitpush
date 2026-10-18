@@ -160,6 +160,10 @@ test("init writes no domain key without a custom domain", async () => {
 test.each([
   ["without a domain", { alias: ["example.com"] }],
   ["that repeats the domain", { domain: "www.example.com", alias: ["WWW.example.com"] }],
+  [
+    "beyond the 8 that fit next to b-cdn.net and the domain in bunny.net's 10 hostnames",
+    { domain: "www.example.com", alias: Array.from({ length: 9 }, (_, i) => `a${i}.example.com`) },
+  ],
 ])("init rejects an alias %s before sending anything to bunny.net", async (_, flags) => {
   const { writes } = fakeBunny();
 

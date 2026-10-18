@@ -287,3 +287,16 @@ test("the trailing slash rule redirects only HTML responses, so files without an
     PatternMatches: ["text/html*"],
   });
 });
+
+test("a Country= redirect with more than 5 countries becomes one rule per 5, because a trigger takes 5", () => {
+  const { rules, warnings } = parseRedirects("/ /eu 302 Country=de,at,ch,fr,it,es,nl");
+
+  expect(warnings).toEqual([]);
+  expect(rules).toHaveLength(2);
+  const countries = rules.map((r) => r.Triggers.find((t) => t.Type === 4)?.PatternMatches ?? []);
+  expect(countries.every((c) => c.length <= 5)).toBe(true);
+  expect(countries.flat().sort()).toEqual(["AT", "CH", "DE", "ES", "FR", "IT", "NL"]);
+  expect(new Set(rules.map((r) => r.Triggers[0].PatternMatches[0])).size).toBe(1);
+  expect(new Set(rules.map((r) => r.ActionParameter1)).size).toBe(1);
+  expect(new Set(rules.map((r) => r.Description)).size).toBe(2);
+});

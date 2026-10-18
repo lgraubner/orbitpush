@@ -36,9 +36,15 @@ const ConfigSchema = z
       ctx.issues.push({ code: "custom", message: problem, path: ["aliases"], input: ctx.value });
   });
 
+// bunny.net allows 10 hostnames per pull zone by default, <name>.b-cdn.net and the domain included
+const MAX_ALIASES = 8;
+
 export function aliasProblem({ domain, aliases }: { domain?: string; aliases: string[] }) {
   if (!aliases.length) return undefined;
   if (!domain) return "aliases need a domain to redirect to";
+  if (aliases.length > MAX_ALIASES) {
+    return `at most ${MAX_ALIASES} aliases fit into bunny.net's 10 hostnames per pull zone, next to <name>.b-cdn.net and the domain. bunny.net support can raise the limit`;
+  }
 
   const repeated = aliases.find((alias) => alias.toLowerCase() === domain.toLowerCase());
   return repeated ? `alias ${repeated} is the domain itself` : undefined;
