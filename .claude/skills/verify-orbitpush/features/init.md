@@ -7,7 +7,7 @@
 - `init-prompts` runs the interactive questions with their defaults.
 - `init-flags` uses flags and `--yes` without prompts.
 - `init-config` writes `orbitpush.json` with the IDs of the created zones.
-- `init-domain` adds the custom domain and its aliases and requests SSL, warning when DNS is not ready. An alias without a domain fails before any request.
+- `init-domain` adds the custom domain and its aliases and requests SSL, warning when DNS is not ready. An alias without a domain fails with `Invalid --alias: aliases need a domain to redirect to` before any request.
 - `init-exists` refuses to run when `orbitpush.json` already exists.
 - `init-rollback` deletes the created zones when a later step fails before the config is written.
 

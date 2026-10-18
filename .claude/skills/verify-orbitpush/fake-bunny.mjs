@@ -58,15 +58,16 @@ function installFetch() {
     const body = await readBody(init.body);
     const state = load(statePath);
 
+    const injected = process.env.FAKE_BUNNY_FAIL === `${method} ${url.pathname}`;
     let response;
     try {
-      response = route(state, url, method, headers, body);
+      response = route(injected ? structuredClone(state) : state, url, method, headers, body);
     } catch (error) {
       if (error instanceof Offline) throw error;
       response = reply(500, { Message: String(error) });
     }
 
-    if (process.env.FAKE_BUNNY_FAIL === `${method} ${url.pathname}`) {
+    if (injected) {
       response = reply(500, { Message: "fake-bunny: injected failure" });
     }
 

@@ -7,7 +7,7 @@
 - `disable` adds one `orbitpush disabled` rule (ActionType 4, matching every URL) and purges. Run twice, the second run sends no write.
 - `deploy` while disabled keeps the rule, warns `The site is disabled`, and deploys as usual.
 - `enable` deletes every `orbitpush disabled` rule and purges. Run twice, the second run sends no write.
-- `destroy` without `--yes` and without a terminal exits `1` before any request. With `--yes` it deletes the pull zone, then the storage zone, then `orbitpush.json`.
+- `destroy` without `--yes` and without a terminal exits `1` before any request. On a terminal it asks to type the project name; Ctrl-C exits `130`. With `--yes` it deletes the pull zone, then the storage zone, then `orbitpush.json`.
 - `destroy` again after both zones are gone gets two 404s and exits `0`.
 
 ## How to get to it (user POV)
@@ -23,7 +23,7 @@ Preconditions:
 - **Disable.** `$C cli $RUN disable-1 -- disable`, then again as `disable-2`. `bunny-state.json` `requests[]` holds one `addOrUpdate` with `Description: "orbitpush disabled"`.
 - **Deploy while disabled.** `deploy` exits `0`, stderr warns, and no `DELETE .../edgerules/<guid>` follows.
 - **Enable.** `$C cli $RUN enable-1 -- enable`, then `enable-2`: one edge rule DELETE in total.
-- **Destroy.** `destroy` without flags exits `1`. Copy `orbitpush.json` into the evidence dir, run `destroy --yes`: exit `0`, two DELETEs with `204`, the summary has no zones, `orbitpush.json` is gone. Copy the file back and run `destroy --yes` again: two DELETEs with `404`, exit `0`.
+- **Destroy.** `destroy` without flags exits `1`. Copy `orbitpush.json` from the work dir into the evidence dir. Run `$C tui $RUN destroy-tui -- destroy`, type `wrong Enter`: the screen shows `Type verify-a to confirm`; `C-c` ends with `[orbitpush exited 130]` and no request. Run `destroy --yes`: exit `0`, two DELETEs with `204`, the summary has no zones, `orbitpush.json` is gone. Copy the file back and run `destroy -y`: two DELETEs with `404`, exit `0`, and the same `✔ Deleted` line.
 - **Live.** After an approved live `disable`: `curl -sS -o /dev/null -w '%{http_code}' https://verify-$RUN.b-cdn.net/` gives `403`; after `enable`, `200`. After `destroy`, the dashboard shows no `verify-$RUN` zones.
 
 ## Gotchas
