@@ -27,9 +27,11 @@ npx orbitpush init --name my-site --dir dist --spa --domain www.example.com --re
 
 The pull zone and storage zone names are global across bunny.net. If the name is taken, choose another one.
 
+If `init` fails before `orbitpush.json` is written, it deletes the zones it just created, so you can run it again with the same name. If that cleanup fails too, `init` names the zone to delete in the dashboard. Failures after that point, such as a missing SSL certificate, are fixed by the next deploy.
+
 ## `orbitpush deploy`
 
-1. Reads `orbitpush.json` and `BUNNY_API_KEY`.
+1. Reads `orbitpush.json`, `BUNNY_API_KEY` and the rule files. A missing `_headers` or `_redirects` means no rules of that kind. A rule file that exists but cannot be read stops the deploy before anything changes.
 2. Compares the output directory with the storage zone using SHA256 checksums and uploads only changed files, HTML files last.
 3. Applies the settings from `orbitpush.json`: SPA/404 handling, replication regions, delivery regions and domains.
 4. Turns `_headers` and `_redirects` into edge rules (see below).
@@ -65,14 +67,14 @@ Commit this file. It never contains the API key.
 
 Settings are applied on every deploy, so you can change them later:
 
-| Field | Notes |
-| --- | --- |
-| `outputDir` | Directory that gets deployed. |
-| `spa` | `true`: unknown paths without a file extension return `/index.html` with status 200. |
-| `domains` | New hostnames are added with SSL. Removed hostnames are **not** removed from bunny.net. |
-| `region` | Main storage region. Fixed after `init`. |
-| `replicationRegions` | Can only be added. bunny.net does not support removing replication regions. |
-| `geoZones` | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`. |
+| Field                | Notes                                                                                   |
+| -------------------- | --------------------------------------------------------------------------------------- |
+| `outputDir`          | Directory that gets deployed.                                                           |
+| `spa`                | `true`: unknown paths without a file extension return `/index.html` with status 200.    |
+| `domains`            | New hostnames are added with SSL. Removed hostnames are **not** removed from bunny.net. |
+| `region`             | Main storage region. Fixed after `init`.                                                |
+| `replicationRegions` | Can only be added. bunny.net does not support removing replication regions.             |
+| `geoZones`           | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`.                                   |
 
 ### 404 page
 
@@ -127,10 +129,15 @@ https://example.com/*  https://www.example.com/:splat  301!
 ## Development
 
 ```bash
-npm install
-npm test        # node:test, no network
-npm run build   # bundles everything into dist/cli.js (no runtime dependencies)
+npm install            # also installs the lefthook git hooks
+npm test               # vitest, no network
+npm run format         # oxfmt
+npm run lint           # oxlint with type-aware rules
+npm run build          # type-checks and bundles everything into dist/cli.js (no runtime dependencies)
+npm run check          # format check, lint, build and tests: must pass before a change is done
 ```
+
+Dependencies are pinned to exact versions. Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`type(scope): subject`); a lefthook `commit-msg` hook runs commitlint and rejects other messages.
 
 ## License
 

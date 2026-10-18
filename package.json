@@ -2,7 +2,6 @@
   "name": "orbitpush",
   "version": "0.1.0",
   "description": "Deploy static sites to your own bunny.net storage zone and pull zone",
-  "type": "module",
   "license": "MIT",
   "bin": {
     "orbitpush": "dist/cli.js"
@@ -11,19 +10,32 @@
     "dist",
     "schema.json"
   ],
-  "engines": {
-    "node": ">=22"
-  },
+  "type": "module",
   "scripts": {
     "build": "tsc && esbuild src/cli.ts --bundle --minify --platform=node --format=esm --target=node22 --banner:js=\"import { createRequire } from \\\"node:module\\\"; const require = createRequire(import.meta.url);\" --outfile=dist/cli.js",
-    "test": "node --test",
+    "test": "vitest run",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "lint": "oxlint --type-aware",
+    "check": "npm run format:check && npm run lint && npm run build && npm test",
+    "prepare": "lefthook install",
     "prepack": "npm run build"
   },
   "devDependencies": {
-    "@inquirer/prompts": "^8.7.3",
-    "@types/node": "^24.0.0",
-    "esbuild": "^0.25.0",
-    "mri": "^1.2.0",
-    "typescript": "^5.9.0"
+    "@commitlint/cli": "21.2.3",
+    "@commitlint/config-conventional": "21.2.3",
+    "@inquirer/prompts": "8.7.3",
+    "@types/node": "24.19.2",
+    "esbuild": "0.28.2",
+    "lefthook": "2.2.2",
+    "mri": "1.2.0",
+    "oxfmt": "0.73.0",
+    "oxlint": "1.88.0",
+    "oxlint-tsgolint": "7.0.2004",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

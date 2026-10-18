@@ -31,7 +31,8 @@ export async function readConfig(): Promise<Config> {
     typeof config.outputDir !== "string" && "outputDir must be a string",
     typeof config.spa !== "boolean" && "spa must be true or false",
     !isList(config.domains) && "domains must be a list of hostnames",
-    !STORAGE_REGIONS.includes(config.region) && `region must be one of ${STORAGE_REGIONS.join(", ")}`,
+    !STORAGE_REGIONS.includes(config.region) &&
+      `region must be one of ${STORAGE_REGIONS.join(", ")}`,
     !isList(config.replicationRegions, STORAGE_REGIONS) &&
       `replicationRegions must only contain ${STORAGE_REGIONS.join(", ")}`,
     !isList(config.geoZones, GEO_ZONES) && `geoZones must only contain ${GEO_ZONES.join(", ")}`,

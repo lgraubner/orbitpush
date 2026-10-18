@@ -1,0 +1,7 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": [
+    "skills-lock.json",
+    ".claude/skills/{code-review-and-quality,codebase-design,domain-modeling,emil-design-eng,grill-with-docs,grilling,handoff,tdd,unslop,wait-what,writing-for-agents}/**"
+  ]
+}

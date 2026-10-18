@@ -37,7 +37,7 @@ const [command] = args._;
 const interactive = Boolean(process.stdin.isTTY && process.stderr.isTTY) && !process.env.CI;
 
 try {
-  if (args.version) console.log(version);
+  if (args.version) process.stdout.write(`${version}\n`);
   else if (command === "init") {
     // mri defaults booleans to false; only skip the prompt when --spa or --no-spa was given.
     const spaGiven = process.argv.some((arg) => arg === "--spa" || arg === "--no-spa");
@@ -47,7 +47,7 @@ try {
     await deploy(apiKeyFromEnv(), await readConfig());
     log.success(`Deployed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   } else {
-    console.log(help);
+    process.stdout.write(`${help}\n`);
     if (command && !args.help) process.exitCode = 2;
   }
 } catch (error) {

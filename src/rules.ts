@@ -29,7 +29,8 @@ export function toPattern(from: string) {
   const params = new Map<string, number>();
   const parts = segments.map((segment, index) => {
     if (segment === "*") {
-      if (index !== segments.length - 1) throw new Error(`"*" must be the last segment in "${from}"`);
+      if (index !== segments.length - 1)
+        throw new Error(`"*" must be the last segment in "${from}"`);
       params.set("splat", index);
       return ".*";
     }
@@ -78,7 +79,8 @@ export function parseRedirects(text: string): Parsed {
     const status = Number(statusToken.replace(/!$/, ""));
     if (status === 200 && /^\/\*$/.test(from) && /^\/index\.html$/.test(to))
       return skip('set "spa": true in orbitpush.json instead');
-    if (!REDIRECT_STATUSES.has(status)) return skip(`status ${statusToken} is not supported, only redirects`);
+    if (!REDIRECT_STATUSES.has(status))
+      return skip(`status ${statusToken} is not supported, only redirects`);
     try {
       const { pattern, params } = toPattern(from);
       const target = to.replace(/:([A-Za-z_]\w*)/g, (placeholder, name: string) => {

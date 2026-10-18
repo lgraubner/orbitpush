@@ -30,12 +30,19 @@ export async function init(flags: InitFlags, interactive: boolean) {
     apiKey = await password({ message: "Bunny API key", mask: true, validate: (v) => !!v.trim() });
   }
 
-  const defaultName = basename(process.cwd()).toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+  const defaultName = basename(process.cwd())
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-");
   const validName = (v: string) => /^[a-z0-9-]+$/i.test(v) || "Only letters, numbers and dashes";
   const name = await ask(flags.name, defaultName, () =>
-    input({ message: "Project name (used for storage zone and pull zone)", default: defaultName, validate: validName }),
+    input({
+      message: "Project name (used for storage zone and pull zone)",
+      default: defaultName,
+      validate: validName,
+    }),
   );
-  if (validName(name) !== true) throw new Error(`Invalid name "${name}": only letters, numbers and dashes`);
+  if (validName(name) !== true)
+    throw new Error(`Invalid name "${name}": only letters, numbers and dashes`);
 
   const defaultDir = ["dist", "build", "out", "public"].find((dir) => existsSync(dir)) ?? "dist";
   const outputDir = await ask(flags.dir, defaultDir, () =>
@@ -46,15 +53,20 @@ export async function init(flags: InitFlags, interactive: boolean) {
   );
   const domainFlag = flags.domain === undefined ? undefined : [flags.domain].flat().join(",");
   const domains = (
-    await ask(domainFlag, "", () => input({ message: "Custom domains, comma separated (optional)" }))
+    await ask(domainFlag, "", () =>
+      input({ message: "Custom domains, comma separated (optional)" }),
+    )
   )
     .split(",")
     .map((d) => d.trim())
     .filter(Boolean);
-  const region = (await ask(flags.region, "DE", () =>
-    select({ message: "Main storage region", choices: STORAGE_REGIONS, default: "DE" }),
-  )).toUpperCase();
-  if (!STORAGE_REGIONS.includes(region)) throw new Error(`Region must be one of ${STORAGE_REGIONS.join(", ")}`);
+  const region = (
+    await ask(flags.region, "DE", () =>
+      select({ message: "Main storage region", choices: STORAGE_REGIONS, default: "DE" }),
+    )
+  ).toUpperCase();
+  if (!STORAGE_REGIONS.includes(region))
+    throw new Error(`Region must be one of ${STORAGE_REGIONS.join(", ")}`);
   const replicationRegions = prompt
     ? await checkbox({
         message: "Storage replication regions (cannot be removed later)",
@@ -77,37 +89,48 @@ export async function init(flags: InitFlags, interactive: boolean) {
     ZoneTier: 0,
   });
 
-  log.step(`Creating pull zone ${name}`);
-  let pullZone: PullZone;
+  // Until orbitpush.json exists, nothing points at the new zones and their names stay taken, so
+  // any failure before then deletes them again. Later steps (domains) are reconciled by deploy.
+  let pullZone: PullZone | undefined;
+  let config: Config;
   try {
+    log.step(`Creating pull zone ${name}`);
     pullZone = await api<PullZone>(apiKey, "POST", "/pullzone", {
       Name: name,
       OriginType: 2,
       StorageZoneId: storageZone.Id,
-      ...Object.fromEntries(GEO_ZONES.map((zone) => [`EnableGeoZone${zone}`, geoZones.includes(zone)])),
+      ...Object.fromEntries(
+        GEO_ZONES.map((zone) => [`EnableGeoZone${zone}`, geoZones.includes(zone)]),
+      ),
     });
+
+    config = {
+      name,
+      outputDir,
+      spa,
+      domains,
+      region,
+      replicationRegions,
+      geoZones,
+      storageZoneId: storageZone.Id,
+      pullZoneId: pullZone.Id,
+    };
+    await writeConfig(config);
   } catch (error) {
-    // Clean up so the name is free for the next attempt.
-    await api(apiKey, "DELETE", `/storagezone/${storageZone.Id}`).catch(() => {});
+    const remove = (path: string, label: string) =>
+      api(apiKey, "DELETE", path).catch(() =>
+        log.warn(`Could not delete ${label}. Delete it in the bunny.net dashboard.`),
+      );
+    if (pullZone) await remove(`/pullzone/${pullZone.Id}`, `pull zone ${name} (${pullZone.Id})`);
+    await remove(`/storagezone/${storageZone.Id}`, `storage zone ${name} (${storageZone.Id})`);
     throw error;
   }
 
-  const config: Config = {
-    name,
-    outputDir,
-    spa,
-    domains,
-    region,
-    replicationRegions,
-    geoZones,
-    storageZoneId: storageZone.Id,
-    pullZoneId: pullZone.Id,
-  };
-  await writeConfig(config);
   log.success(`Created ${CONFIG_FILE}`);
 
   const cdnHost = await ensureDomains(apiKey, config);
   log.success(`Ready: https://${cdnHost}`);
-  if (!process.env.BUNNY_API_KEY) log.detail("Set BUNNY_API_KEY in your environment before deploying.");
+  if (!process.env.BUNNY_API_KEY)
+    log.detail("Set BUNNY_API_KEY in your environment before deploying.");
   log.detail("Next: build your site, then run `npx orbitpush deploy`");
 }

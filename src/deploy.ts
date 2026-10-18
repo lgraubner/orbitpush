@@ -21,7 +21,9 @@ export async function deploy(apiKey: string, config: Config) {
   log.step("Comparing with storage zone");
   const bucket = storage(zone);
   const remote = await bucket.list();
-  const changed = [...files].filter(([path, file]) => remote.get(path)?.toUpperCase() !== file.checksum);
+  const changed = [...files].filter(
+    ([path, file]) => remote.get(path)?.toUpperCase() !== file.checksum,
+  );
   // HTML last, so new pages never reference assets that are not uploaded yet.
   changed.sort(([a], [b]) => Number(a.endsWith(".html")) - Number(b.endsWith(".html")));
   const stale = [...remote.keys()].filter((path) => !files.has(path));
@@ -52,16 +54,28 @@ async function readOutput(dir: string) {
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     const absolute = join(entry.parentPath, entry.name);
-    const path = absolute.slice(dir.replace(/[\\/]$/, "").length + 1).split(sep).join("/");
+    const path = absolute
+      .slice(dir.replace(/[\\/]$/, "").length + 1)
+      .split(sep)
+      .join("/");
     if (RULE_FILES.includes(path)) continue;
-    const checksum = createHash("sha256").update(await readFile(absolute)).digest("hex").toUpperCase();
+    const checksum = createHash("sha256")
+      .update(await readFile(absolute))
+      .digest("hex")
+      .toUpperCase();
     files.set(path, { absolute, checksum });
   }
   return files;
 }
 
 async function readRules(dir: string) {
-  const read = (name: string) => readFile(join(dir, name), "utf8").catch(() => "");
+  // Only a missing file means "no rules"; any other read error must stop the deploy, or the
+  // rule sync would delete every managed rule
+  const read = (name: string) =>
+    readFile(join(dir, name), "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return "";
+      throw error;
+    });
   const redirects = parseRedirects(await read("_redirects"));
   const headers = parseHeaders(await read("_headers"));
   for (const warning of [...redirects.warnings, ...headers.warnings]) log.warn(warning);
@@ -80,7 +94,9 @@ export async function applySettings(apiKey: string, config: Config, has404: bool
     apiKey,
     "POST",
     `/pullzone/${config.pullZoneId}`,
-    Object.fromEntries(GEO_ZONES.map((zone) => [`EnableGeoZone${zone}`, config.geoZones.includes(zone)])),
+    Object.fromEntries(
+      GEO_ZONES.map((zone) => [`EnableGeoZone${zone}`, config.geoZones.includes(zone)]),
+    ),
   );
   await ensureDomains(apiKey, config);
 }
@@ -96,14 +112,23 @@ export async function ensureDomains(apiKey: string, config: Config) {
     }
     if (!hostname.HasCertificate) {
       try {
-        await api(apiKey, "GET", `/pullzone/loadFreeCertificate?hostname=${encodeURIComponent(domain)}`);
+        await api(
+          apiKey,
+          "GET",
+          `/pullzone/loadFreeCertificate?hostname=${encodeURIComponent(domain)}`,
+        );
       } catch {
-        log.warn(`No SSL certificate for ${domain} yet. Point a CNAME record to ${cdnHost} and deploy again.`);
+        log.warn(
+          `No SSL certificate for ${domain} yet. Point a CNAME record to ${cdnHost} and deploy again.`,
+        );
         continue;
       }
     }
     if (!hostname.ForceSSL) {
-      await api(apiKey, "POST", `/pullzone/${config.pullZoneId}/setForceSSL`, { Hostname: domain, ForceSSL: true });
+      await api(apiKey, "POST", `/pullzone/${config.pullZoneId}/setForceSSL`, {
+        Hostname: domain,
+        ForceSSL: true,
+      });
     }
   }
   return cdnHost;
@@ -116,12 +141,14 @@ async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) 
   const existingDescriptions = new Set(existing.map((r) => r.Description));
   const wanted = new Set(rules.map((r) => r.Description));
   const added = rules.filter((r) => !existingDescriptions.has(r.Description));
-  const removed = existing.filter((r) => !wanted.has(r.Description!));
+  const removed = existing.filter((r) => !wanted.has(r.Description ?? ""));
   if (!added.length && !removed.length) return;
 
   log.step(`Updating edge rules (+${added.length} -${removed.length})`);
-  for (const rule of added) await api(apiKey, "POST", `/pullzone/${pullZoneId}/edgerules/addOrUpdate`, rule);
-  for (const rule of removed) await api(apiKey, "DELETE", `/pullzone/${pullZoneId}/edgerules/${rule.Guid}`);
+  for (const rule of added)
+    await api(apiKey, "POST", `/pullzone/${pullZoneId}/edgerules/addOrUpdate`, rule);
+  for (const rule of removed)
+    await api(apiKey, "DELETE", `/pullzone/${pullZoneId}/edgerules/${rule.Guid}`);
 }
 
 async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<unknown>) {

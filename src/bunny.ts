@@ -15,7 +15,12 @@ export function apiKeyFromEnv() {
   return key;
 }
 
-export async function api<T = unknown>(apiKey: string, method: string, path: string, body?: unknown) {
+export async function api<T = unknown>(
+  apiKey: string,
+  method: string,
+  path: string,
+  body?: unknown,
+) {
   const response = await fetch(`https://api.bunny.net${path}`, {
     method,
     headers: {
@@ -33,7 +38,11 @@ export async function api<T = unknown>(apiKey: string, method: string, path: str
 export function storage(zone: StorageZone) {
   const base = `https://${zone.StorageHostname}/${encodeURIComponent(zone.Name)}/`;
   const url = (path: string) => base + path.split("/").map(encodeURIComponent).join("/");
-  const request = async (method: string, path: string, init: RequestInit = {}) => {
+  const request = async (
+    method: string,
+    path: string,
+    init: { body?: Blob; headers?: Record<string, string> } = {},
+  ) => {
     const response = await fetch(url(path), {
       ...init,
       method,
