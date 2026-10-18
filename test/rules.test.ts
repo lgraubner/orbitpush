@@ -71,3 +71,8 @@ test("unchanged rules keep their description, changed rules get a new one", () =
   expect(parseRedirects("/a   /b  301").rules[0].Description.split(" ")[1]).toBe(a.split(" ")[1]);
   expect(parseRedirects("/a /c").rules[0].Description).not.toBe(a);
 });
+
+test("rule hashes stay stable across releases, so deployed managed rules are kept", () => {
+  expect(parseRedirects("/a /b").rules[0].Description).toBe("orbitpush cac3b5ea61 /a /b 301");
+  expect(parseHeaders("/*\n  X-A: 1").rules[0].Description).toBe("orbitpush 93842498ac headers /*");
+});

@@ -1,26 +1,60 @@
+import * as z from "zod/mini";
+
+import { GEO_ZONES, type GeoZone } from "./config.ts";
+
 export const API_KEY_URL = "https://dash.bunny.net/account/api-key";
 
-export type PullZone = {
-  Id: number;
-  Name: string;
-  Hostnames: { Value: string; HasCertificate: boolean; ForceSSL: boolean }[];
-  EdgeRules: { Guid: string; Description: string | null }[];
-};
+export const PullZone = z.object({
+  Id: z.int(),
+  Name: z.string(),
+  Hostnames: z.array(
+    z.object({ Value: z.string(), HasCertificate: z.boolean(), ForceSSL: z.boolean() }),
+  ),
+  EdgeRules: z.array(z.object({ Guid: z.string(), Description: z.nullable(z.string()) })),
+});
 
-export type StorageZone = { Id: number; Name: string; Password: string; StorageHostname: string };
+export type PullZone = z.infer<typeof PullZone>;
+
+export const StorageZone = z.object({
+  Id: z.int(),
+  Name: z.string(),
+  Password: z.string(),
+  StorageHostname: z.string(),
+});
+
+export type StorageZone = z.infer<typeof StorageZone>;
+
+export const CreatedZone = z.object({ Id: z.int() });
+export type CreatedZone = z.infer<typeof CreatedZone>;
+
+const Listing = z.array(
+  z.object({
+    ObjectName: z.string(),
+    IsDirectory: z.boolean(),
+    Checksum: z.optional(z.nullable(z.string())),
+  }),
+);
+
+const ErrorBody = z.object({ Message: z.string() });
+
+export function envApiKey() {
+  return process.env.BUNNY_API_KEY?.trim() || undefined;
+}
 
 export function apiKeyFromEnv() {
-  const key = process.env.BUNNY_API_KEY?.trim();
+  const key = envApiKey();
   if (!key) throw new Error(`BUNNY_API_KEY is not set. Create an API key at ${API_KEY_URL}`);
+
   return key;
 }
 
-export async function api<T = unknown>(
-  apiKey: string,
-  method: string,
-  path: string,
-  body?: unknown,
-) {
+export function geoZoneFlags(geoZones: GeoZone[]) {
+  return Object.fromEntries(
+    GEO_ZONES.map((zone) => [`EnableGeoZone${zone}`, geoZones.includes(zone)]),
+  );
+}
+
+export async function api(apiKey: string, method: string, path: string, body?: unknown) {
   const response = await fetch(`https://api.bunny.net${path}`, {
     method,
     headers: {
@@ -31,8 +65,20 @@ export async function api<T = unknown>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`${method} ${path} failed: ${await errorText(response)}`);
-  const text = await response.text();
-  return (text ? JSON.parse(text) : undefined) as T;
+
+  return response;
+}
+
+export async function apiJson<T>(
+  schema: z.ZodMiniType<T>,
+  apiKey: string,
+  method: string,
+  path: string,
+  body?: unknown,
+) {
+  const response = await api(apiKey, method, path, body);
+
+  return parseResponse(schema, await response.json().catch(() => undefined), `${method} ${path}`);
 }
 
 export function storage(zone: StorageZone) {
@@ -49,6 +95,7 @@ export function storage(zone: StorageZone) {
       headers: { AccessKey: zone.Password, ...init.headers },
     });
     if (!response.ok) throw new Error(`${method} /${path} failed: ${await errorText(response)}`);
+
     return response;
   };
 
@@ -57,12 +104,14 @@ export function storage(zone: StorageZone) {
       request("PUT", path, { body: data, headers: { Checksum: checksum.toUpperCase() } }),
     delete: (path: string) => request("DELETE", path),
     async list(dir = ""): Promise<Map<string, string>> {
-      const entries = (await (await request("GET", dir)).json()) as {
-        ObjectName: string;
-        IsDirectory: boolean;
-        Checksum: string | null;
-      }[];
+      const response = await request("GET", dir);
+      const entries = parseResponse(
+        Listing,
+        await response.json().catch(() => undefined),
+        `GET /${dir}`,
+      );
       const files = new Map<string, string>();
+
       await Promise.all(
         entries.map(async (entry) => {
           const path = dir + entry.ObjectName;
@@ -70,16 +119,37 @@ export function storage(zone: StorageZone) {
           else for (const [p, c] of await this.list(`${path}/`)) files.set(p, c);
         }),
       );
+
       return files;
     },
   };
 }
 
+function parseResponse<T>(schema: z.ZodMiniType<T>, json: unknown, request: string) {
+  const result = schema.safeParse(json);
+  if (!result.success) {
+    const problems = result.error.issues.map(
+      (issue) => `${issue.path.join(".")}: ${issue.message}`,
+    );
+    throw new Error(
+      `bunny.net returned an unexpected response for ${request}: ${problems.join("; ")}`,
+    );
+  }
+
+  return result.data;
+}
+
 async function errorText(response: Response) {
   const text = await response.text().catch(() => "");
+  let json: unknown;
   try {
-    const json = JSON.parse(text) as { Message?: string };
-    if (json.Message) return `${json.Message} (HTTP ${response.status})`;
-  } catch {}
+    json = JSON.parse(text);
+  } catch {
+    json = undefined;
+  }
+
+  const body = ErrorBody.safeParse(json);
+  if (body.success) return `${body.data.Message} (HTTP ${response.status})`;
+
   return `${text.slice(0, 200) || "no details"} (HTTP ${response.status})`;
 }

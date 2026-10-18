@@ -9,3 +9,7 @@ export const log = {
   error: (text: string) => write(`${styleText("red", "✖")} ${text}`),
   success: (text: string) => write(`${styleText("green", "✔")} ${text}`),
 };
+
+export function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}

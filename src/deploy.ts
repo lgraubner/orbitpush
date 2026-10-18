@@ -3,15 +3,16 @@ import { openAsBlob } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, sep } from "node:path";
 
-import { api, type PullZone, type StorageZone, storage } from "./bunny.ts";
-import { type Config, GEO_ZONES } from "./config.ts";
-import { log } from "./log.ts";
+import { api, apiJson, geoZoneFlags, PullZone, StorageZone, storage } from "./bunny.ts";
+import type { Config } from "./config.ts";
+import { isMissing, readIfExists } from "./files.ts";
+import { errorMessage, log } from "./log.ts";
 import { type EdgeRule, parseHeaders, parseRedirects, RULE_PREFIX } from "./rules.ts";
 
 const RULE_FILES = ["_headers", "_redirects"];
 
 export async function deploy(apiKey: string, config: Config) {
-  const zone = await api<StorageZone>(apiKey, "GET", `/storagezone/${config.storageZoneId}`);
+  const zone = await apiJson(StorageZone, apiKey, "GET", `/storagezone/${config.storageZoneId}`);
   const files = await readOutput(config.outputDir);
   if (!files.has("index.html")) log.warn(`No index.html in ${config.outputDir}`);
 
@@ -45,24 +46,32 @@ export async function deploy(apiKey: string, config: Config) {
 }
 
 async function readOutput(dir: string) {
+  const entries = await readdir(dir, { recursive: true, withFileTypes: true }).catch(
+    (error: unknown) => {
+      if (isMissing(error))
+        throw new Error(`Output directory "${dir}" not found. Did you run the build?`);
+      throw error;
+    },
+  );
   const files = new Map<string, { absolute: string; checksum: string }>();
-  const entries = await readdir(dir, { recursive: true, withFileTypes: true }).catch(() => {
-    throw new Error(`Output directory "${dir}" not found. Did you run the build?`);
-  });
+
   for (const entry of entries) {
     if (!entry.isFile()) continue;
+
     const absolute = join(entry.parentPath, entry.name);
     const path = absolute
       .slice(dir.replace(/[\\/]$/, "").length + 1)
       .split(sep)
       .join("/");
     if (RULE_FILES.includes(path)) continue;
+
     const checksum = createHash("sha256")
       .update(await readFile(absolute))
       .digest("hex")
       .toUpperCase();
     files.set(path, { absolute, checksum });
   }
+
   return files;
 }
 
@@ -70,19 +79,12 @@ function htmlLast(a: string, b: string) {
   return Number(a.endsWith(".html")) - Number(b.endsWith(".html"));
 }
 
-async function readIfExists(path: string) {
-  try {
-    return await readFile(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
-    throw error;
-  }
-}
-
 async function readRules(dir: string) {
   const redirects = parseRedirects(await readIfExists(join(dir, "_redirects")));
   const headers = parseHeaders(await readIfExists(join(dir, "_headers")));
+
   for (const warning of [...redirects.warnings, ...headers.warnings]) log.warn(warning);
+
   return [...redirects.rules, ...headers.rules];
 }
 
@@ -93,40 +95,35 @@ export async function applySettings(apiKey: string, config: Config, has404: bool
     Rewrite404To200: config.spa,
     Custom404FilePath: config.spa ? "/index.html" : has404 ? "/404.html" : "",
   });
-  await api(
-    apiKey,
-    "POST",
-    `/pullzone/${config.pullZoneId}`,
-    Object.fromEntries(
-      GEO_ZONES.map((zone) => [`EnableGeoZone${zone}`, config.geoZones.includes(zone)]),
-    ),
-  );
+  await api(apiKey, "POST", `/pullzone/${config.pullZoneId}`, geoZoneFlags(config.geoZones));
   await ensureDomains(apiKey, config);
 }
 
 export async function ensureDomains(apiKey: string, config: Config) {
-  const pullZone = await api<PullZone>(apiKey, "GET", `/pullzone/${config.pullZoneId}`);
+  const pullZone = await apiJson(PullZone, apiKey, "GET", `/pullzone/${config.pullZoneId}`);
   const cdnHost = `${pullZone.Name}.b-cdn.net`;
+
   for (const domain of config.domains.map((d) => d.toLowerCase())) {
     let hostname = pullZone.Hostnames.find((h) => h.Value.toLowerCase() === domain);
     if (!hostname) {
       await api(apiKey, "POST", `/pullzone/${config.pullZoneId}/addHostname`, { Hostname: domain });
       hostname = { Value: domain, HasCertificate: false, ForceSSL: false };
     }
+
     if (!hostname.HasCertificate) {
-      try {
-        await api(
-          apiKey,
-          "GET",
-          `/pullzone/loadFreeCertificate?hostname=${encodeURIComponent(domain)}`,
-        );
-      } catch {
+      const query = `hostname=${encodeURIComponent(domain)}`;
+      const failure = await api(apiKey, "GET", `/pullzone/loadFreeCertificate?${query}`).then(
+        () => undefined,
+        (error: unknown) => errorMessage(error),
+      );
+      if (failure) {
         log.warn(
-          `No SSL certificate for ${domain} yet. Point a CNAME record to ${cdnHost} and deploy again.`,
+          `No SSL certificate for ${domain} yet. Point a CNAME record to ${cdnHost} and deploy again. bunny.net: ${failure}`,
         );
         continue;
       }
     }
+
     if (!hostname.ForceSSL) {
       await api(apiKey, "POST", `/pullzone/${config.pullZoneId}/setForceSSL`, {
         Hostname: domain,
@@ -134,11 +131,12 @@ export async function ensureDomains(apiKey: string, config: Config) {
       });
     }
   }
+
   return cdnHost;
 }
 
 async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) {
-  const pullZone = await api<PullZone>(apiKey, "GET", `/pullzone/${pullZoneId}`);
+  const pullZone = await apiJson(PullZone, apiKey, "GET", `/pullzone/${pullZoneId}`);
   const existing = pullZone.EdgeRules.filter((r) => r.Description?.startsWith(RULE_PREFIX));
   const existingDescriptions = new Set(existing.map((r) => r.Description));
   const wanted = new Set(rules.map((r) => r.Description));
@@ -147,14 +145,19 @@ async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) 
   if (!added.length && !removed.length) return;
 
   log.step(`Updating edge rules (+${added.length} -${removed.length})`);
-  for (const rule of added)
+
+  for (const rule of added) {
     await api(apiKey, "POST", `/pullzone/${pullZoneId}/edgerules/addOrUpdate`, rule);
-  for (const rule of removed)
+  }
+
+  for (const rule of removed) {
     await api(apiKey, "DELETE", `/pullzone/${pullZoneId}/edgerules/${rule.Guid}`);
+  }
 }
 
 async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<unknown>) {
   let next = 0;
+
   await Promise.all(
     Array.from({ length: Math.min(size, items.length) }, async () => {
       while (next < items.length) await fn(items[next++]);

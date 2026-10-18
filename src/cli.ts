@@ -2,14 +2,17 @@
 import { createRequire } from "node:module";
 
 import mri from "mri";
+import * as z from "zod/mini";
 
 import { apiKeyFromEnv } from "./bunny.ts";
 import { readConfig } from "./config.ts";
 import { deploy } from "./deploy.ts";
 import { init } from "./init.ts";
-import { log } from "./log.ts";
+import { errorMessage, log } from "./log.ts";
 
-const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
+const { version } = z
+  .object({ version: z.string() })
+  .parse(createRequire(import.meta.url)("../package.json"));
 
 const help = `Deploy static sites to your own bunny.net account.
 
@@ -37,9 +40,10 @@ const [command] = args._;
 const interactive = Boolean(process.stdin.isTTY && process.stderr.isTTY) && !process.env.CI;
 
 try {
-  if (args.version) process.stdout.write(`${version}\n`);
-  else if (command === "init") {
-    // mri defaults booleans to false; only skip the prompt when --spa or --no-spa was given.
+  if (args.version) {
+    process.stdout.write(`${version}\n`);
+  } else if (command === "init") {
+    // mri defaults booleans to false, so only skip the prompt when --spa or --no-spa was given
     const spaGiven = process.argv.some((arg) => arg === "--spa" || arg === "--no-spa");
     await init({ ...args, spa: spaGiven ? args.spa : undefined }, interactive);
   } else if (command === "deploy") {
@@ -51,9 +55,10 @@ try {
     if (command && !args.help) process.exitCode = 2;
   }
 } catch (error) {
-  if ((error as Error).name === "ExitPromptError") process.exitCode = 130;
-  else {
-    log.error((error as Error).message);
+  if (error instanceof Error && error.name === "ExitPromptError") {
+    process.exitCode = 130;
+  } else {
+    log.error(errorMessage(error));
     process.exitCode = 1;
   }
 }

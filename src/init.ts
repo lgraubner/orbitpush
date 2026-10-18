@@ -3,10 +3,26 @@ import { basename } from "node:path";
 
 import { checkbox, confirm, input, password, select } from "@inquirer/prompts";
 
-import { api, API_KEY_URL, type PullZone, type StorageZone } from "./bunny.ts";
-import { type Config, CONFIG_FILE, GEO_ZONES, STORAGE_REGIONS, writeConfig } from "./config.ts";
+import {
+  api,
+  API_KEY_URL,
+  apiJson,
+  apiKeyFromEnv,
+  CreatedZone,
+  envApiKey,
+  geoZoneFlags,
+} from "./bunny.ts";
+import {
+  type Config,
+  CONFIG_FILE,
+  GEO_ZONES,
+  type GeoZone,
+  Region,
+  STORAGE_REGIONS,
+  writeConfig,
+} from "./config.ts";
 import { ensureDomains } from "./deploy.ts";
-import { log } from "./log.ts";
+import { errorMessage, log } from "./log.ts";
 
 export type InitFlags = {
   name?: string;
@@ -19,16 +35,12 @@ export type InitFlags = {
 
 export async function init(flags: InitFlags, interactive: boolean) {
   if (existsSync(CONFIG_FILE)) throw new Error(`${CONFIG_FILE} already exists.`);
+
   const prompt = interactive && !flags.yes;
   const ask = async <T>(flag: T | undefined, fallback: T, question: () => Promise<T>) =>
     flag ?? (prompt ? question() : fallback);
 
-  let apiKey = process.env.BUNNY_API_KEY?.trim();
-  if (!apiKey) {
-    if (!prompt) throw new Error(`BUNNY_API_KEY is not set. Create an API key at ${API_KEY_URL}`);
-    log.step(`Find your API key at ${API_KEY_URL}`);
-    apiKey = await password({ message: "Bunny API key", mask: true, validate: (v) => !!v.trim() });
-  }
+  const apiKey = envApiKey() ?? (prompt ? await promptApiKey() : apiKeyFromEnv());
 
   const defaultName = basename(process.cwd())
     .toLowerCase()
@@ -41,8 +53,9 @@ export async function init(flags: InitFlags, interactive: boolean) {
       validate: validName,
     }),
   );
-  if (validName(name) !== true)
+  if (validName(name) !== true) {
     throw new Error(`Invalid name "${name}": only letters, numbers and dashes`);
+  }
 
   const defaultDir = ["dist", "build", "out", "public"].find((dir) => existsSync(dir)) ?? "dist";
   const outputDir = await ask(flags.dir, defaultDir, () =>
@@ -60,20 +73,20 @@ export async function init(flags: InitFlags, interactive: boolean) {
     .split(",")
     .map((d) => d.trim())
     .filter(Boolean);
-  const region = (
-    await ask(flags.region, "DE", () =>
-      select({ message: "Main storage region", choices: STORAGE_REGIONS, default: "DE" }),
-    )
-  ).toUpperCase();
-  if (!STORAGE_REGIONS.includes(region))
-    throw new Error(`Region must be one of ${STORAGE_REGIONS.join(", ")}`);
-  const replicationRegions = prompt
+
+  const regionAnswer = await ask(flags.region, "DE", () =>
+    select({ message: "Main storage region", choices: STORAGE_REGIONS, default: "DE" }),
+  );
+  const region = Region.safeParse(regionAnswer.toUpperCase()).data;
+  if (!region) throw new Error(`Region must be one of ${STORAGE_REGIONS.join(", ")}`);
+
+  const replicationRegions: Region[] = prompt
     ? await checkbox({
         message: "Storage replication regions (cannot be removed later)",
         choices: STORAGE_REGIONS.filter((r) => r !== region),
       })
     : [];
-  const geoZones = prompt
+  const geoZones: GeoZone[] = prompt
     ? await checkbox({
         message: "CDN delivery regions",
         choices: GEO_ZONES.map((value) => ({ value, checked: value === "EU" || value === "US" })),
@@ -82,24 +95,22 @@ export async function init(flags: InitFlags, interactive: boolean) {
     : ["EU", "US"];
 
   log.step(`Creating storage zone ${name}`);
-  const storageZone = await api<StorageZone>(apiKey, "POST", "/storagezone", {
+  const storageZone = await apiJson(CreatedZone, apiKey, "POST", "/storagezone", {
     Name: name,
     Region: region,
     ReplicationRegions: replicationRegions,
     ZoneTier: 0,
   });
 
-  let pullZone: PullZone | undefined;
+  let pullZone: CreatedZone | undefined;
   let config: Config;
   try {
     log.step(`Creating pull zone ${name}`);
-    pullZone = await api<PullZone>(apiKey, "POST", "/pullzone", {
+    pullZone = await apiJson(CreatedZone, apiKey, "POST", "/pullzone", {
       Name: name,
       OriginType: 2,
       StorageZoneId: storageZone.Id,
-      ...Object.fromEntries(
-        GEO_ZONES.map((zone) => [`EnableGeoZone${zone}`, geoZones.includes(zone)]),
-      ),
+      ...geoZoneFlags(geoZones),
     });
 
     config = {
@@ -123,20 +134,27 @@ export async function init(flags: InitFlags, interactive: boolean) {
 
   const cdnHost = await ensureDomains(apiKey, config);
   log.success(`Ready: https://${cdnHost}`);
-  if (!process.env.BUNNY_API_KEY)
-    log.detail("Set BUNNY_API_KEY in your environment before deploying.");
+  if (!envApiKey()) log.detail("Set BUNNY_API_KEY in your environment before deploying.");
   log.detail("Next: build your site, then run `npx orbitpush deploy`");
+}
+
+async function promptApiKey() {
+  log.step(`Find your API key at ${API_KEY_URL}`);
+
+  return password({ message: "Bunny API key", mask: true, validate: (v) => !!v.trim() });
 }
 
 async function deleteNewZones(
   apiKey: string,
   name: string,
-  storageZone: StorageZone,
-  pullZone: PullZone | undefined,
+  storageZone: CreatedZone,
+  pullZone: CreatedZone | undefined,
 ) {
   const remove = (path: string, label: string) =>
-    api(apiKey, "DELETE", path).catch(() =>
-      log.warn(`Could not delete ${label}. Delete it in the bunny.net dashboard.`),
+    api(apiKey, "DELETE", path).catch((error: unknown) =>
+      log.warn(
+        `Could not delete ${label}. Delete it in the bunny.net dashboard. ${errorMessage(error)}`,
+      ),
     );
 
   if (pullZone) await remove(`/pullzone/${pullZone.Id}`, `pull zone ${name} (${pullZone.Id})`);

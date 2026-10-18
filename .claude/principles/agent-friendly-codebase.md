@@ -21,5 +21,6 @@ Agents extend the patterns they see in the files they open. Shape the code so th
 
 - Each command has one file (`src/init.ts`, `src/deploy.ts`), dispatched from `src/cli.ts`.
 - `ensureDomains()` lives in `src/deploy.ts`, and `src/init.ts` imports it from there. Move it out of the command file before a third caller appears.
-- The API key is read two ways: `apiKeyFromEnv()` in `src/bunny.ts`, and inline in `init()` with the same error message.
-- The `EnableGeoZone*` request body is built twice, in `applySettings()` and in `init()`.
+- The API key has one source: `envApiKey()` in `src/bunny.ts`. `apiKeyFromEnv()` throws the missing-key error, and `init` falls back to a prompt.
+- The `EnableGeoZone*` request body has one builder: `geoZoneFlags()` in `src/bunny.ts`.
+- An error turns into text through `errorMessage()` in `src/log.ts`, not through `as Error` casts.

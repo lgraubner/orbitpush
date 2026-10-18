@@ -37,6 +37,7 @@ function fakeBunny({ pullZoneTaken = false } = {}) {
         ? new Response(JSON.stringify({ Message: "name taken" }), { status: 400 })
         : json({ Id: 2 });
     }
+
     if (url === "https://api.bunny.net/pullzone/2") {
       return json({ Id: 2, Name: "site", Hostnames: [], EdgeRules: [] });
     }

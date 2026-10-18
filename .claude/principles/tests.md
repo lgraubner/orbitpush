@@ -20,6 +20,7 @@ Keep tests that catch the first edit and survive the second. Rewrite or delete t
 - `test/deploy.test.ts` and `test/init.test.ts` replace `fetch` through `fakeBunny()` and assert the writes sent to bunny.net and their bodies. The deploy test asserts their order on purpose: HTML last and deletes after uploads are behavior.
 - `test/rules.test.ts` asserts the Lua patterns and actions the parsers produce, which is what bunny.net receives.
 - No test reaches the network or reads `BUNNY_API_KEY`.
-- `readConfig()` has no tests yet.
+- `test/config.test.ts` covers `readConfig()`: a valid file, a missing, an unreadable and a malformed file, and every invalid field named.
+- `test/rules.test.ts` pins the managed rule hashes, because deployed rules are matched by them.
 
 Adapted from pstack (MIT), see `.claude/LICENSE-pstack`.

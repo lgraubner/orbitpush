@@ -22,9 +22,9 @@ Boundaries: environment, network input (HTTP, WebSocket), queue payloads, extern
 
 ## In this repo
 
-- `readConfig()` in `src/config.ts` parses `orbitpush.json`, but casts with `JSON.parse(raw) as Config` before its hand-written checks, and keeps `region` and the region lists as `string`.
-- The storage region rule is checked twice: in `readConfig()` and in `init()` (`src/init.ts`). A `Region` union derived from `STORAGE_REGIONS` would carry it once.
-- `api<T>()` and `storage().list()` in `src/bunny.ts` cast bunny.net responses to `PullZone`, `StorageZone`, and the listing type without parsing them.
+- `readConfig()` in `src/config.ts` parses `orbitpush.json` with a `zod/mini` schema, and `Config` is `z.infer` of it. Unknown keys such as `$schema` are dropped.
+- `Region` is derived from `STORAGE_REGIONS` and is the only place the region rule lives: `readConfig()` and `init()` both parse through it.
+- bunny.net responses are parsed where they enter: `apiJson()` and `storage().list()` in `src/bunny.ts` take a schema and throw `bunny.net returned an unexpected response for ...` before any write follows.
 - `EdgeRule` in `src/rules.ts` pins the wire constants bunny.net expects as literal types, such as `TriggerMatchingType: 0` and `Enabled: true`.
 
 Adapted from pstack (MIT), see `.claude/LICENSE-pstack`.

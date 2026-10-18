@@ -29,7 +29,9 @@ function config(outputDir: string): Config {
   };
 }
 
-function fakeBunny() {
+function fakeBunny({
+  storageZone = { Id: 1, Name: "site", Password: "pw", StorageHostname: "storage.bunnycdn.com" },
+}: { storageZone?: Record<string, unknown> } = {}) {
   const kept = parseRedirects("/a /b").rules[0].Description;
   const writes: string[] = [];
   const bodies: Record<string, unknown> = {};
@@ -43,7 +45,7 @@ function fakeBunny() {
     if (typeof init.body === "string") bodies[`${method} ${url}`] = JSON.parse(init.body);
 
     if (url === "https://api.bunny.net/storagezone/1" && method === "GET") {
-      return json({ Id: 1, Name: "site", Password: "pw", StorageHostname: "storage.bunnycdn.com" });
+      return json(storageZone);
     }
 
     if (url === "https://api.bunny.net/pullzone/2" && method === "GET") {
@@ -123,5 +125,32 @@ test("deploy fails before any write when a rule file exists but cannot be read",
   const { writes } = fakeBunny();
 
   await expect(deploy("key", config(dir))).rejects.toMatchObject({ code: "EISDIR" });
+  expect(writes).toEqual([]);
+});
+
+test("deploy fails before any write when bunny.net returns an unexpected storage zone", async () => {
+  const dir = await outputDir();
+  const { writes } = fakeBunny({ storageZone: { Id: 1, Name: "site" } });
+
+  await expect(deploy("key", config(dir))).rejects.toThrow(/bunny\.net returned an unexpected/);
+  expect(writes).toEqual([]);
+});
+
+test("deploy reports an output directory that is not a directory as such, not as missing", async () => {
+  const dir = await outputDir();
+  const file = join(dir, "index.html");
+  const { writes } = fakeBunny();
+
+  await expect(deploy("key", config(file))).rejects.toMatchObject({ code: "ENOTDIR" });
+  expect(writes).toEqual([]);
+});
+
+test("deploy tells the user to build when the output directory is missing", async () => {
+  const dir = await outputDir();
+  const { writes } = fakeBunny();
+
+  await expect(deploy("key", config(join(dir, "missing")))).rejects.toThrow(
+    /Output directory ".*missing" not found\. Did you run the build\?/,
+  );
   expect(writes).toEqual([]);
 });
