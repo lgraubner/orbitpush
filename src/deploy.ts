@@ -23,6 +23,7 @@ import {
   domainRules,
   MAX_EDGE_RULES,
   type EdgeRule,
+  isAliasRule,
   isManaged,
   parseHeaders,
   parseRedirects,
@@ -203,8 +204,8 @@ async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeRule[]) 
   const added = writes.length - kept.size;
   log.step(`Updating edge rules (+${added} ~${kept.size} -${removed.length})`);
 
-  const remove = async () => {
-    for (const rule of removed) {
+  const remove = async (rules: typeof removed) => {
+    for (const rule of rules) {
       await api(apiKey, {
         method: "DELETE",
         path: `/pullzone/${pullZoneId}/edgerules/${rule.Guid}`,
@@ -213,7 +214,8 @@ async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeRule[]) 
   };
   // bunny.net rejects every write on a full zone, so delete first when adding first would fill it
   const deleteFirst = pullZone.EdgeRules.length + added >= MAX_EDGE_RULES;
-  if (deleteFirst) await remove();
+  const first = deleteFirst ? removed : removed.filter((r) => isAliasRule(r.Description));
+  await remove(first);
 
   for (const rule of writes) {
     await api(apiKey, {
@@ -223,5 +225,5 @@ async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeRule[]) 
     });
   }
 
-  if (!deleteFirst) await remove();
+  await remove(removed.filter((r) => !first.includes(r)));
 }

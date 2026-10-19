@@ -26,6 +26,10 @@ const SERVED_STATUS = new Map([
 export const RULE_PREFIX = "orbitpush ";
 export const DISABLED_RULE = `${RULE_PREFIX}disabled`;
 
+export function isAliasRule(description: string | null) {
+  return new RegExp(`^${RULE_PREFIX}[0-9a-f]{10} alias `).test(description ?? "");
+}
+
 export function isManaged<T extends { Description: string | null }>(
   rule: T,
 ): rule is T & { Description: string } {

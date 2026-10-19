@@ -7,7 +7,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import type { Config } from "../src/config.ts";
 import { deploy } from "../src/deploy.ts";
-import { parseRedirects } from "../src/rules.ts";
+import { domainRules, parseRedirects } from "../src/rules.ts";
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex").toUpperCase();
 
@@ -783,4 +783,25 @@ test.each([
   fakeBunny({ hang: url });
 
   await expect(deploy("key", config(dir))).rejects.toThrow(message);
+});
+
+test("deploy deletes the old alias redirect before writing the swapped one, so the two never loop", async () => {
+  const dir = await outputDir();
+  const before = domainRules({ name: "site", domain: "www.example.com", aliases: ["example.com"] });
+  const { writes } = fakeBunny({
+    hostnames: [
+      { Value: "www.example.com", HasCertificate: true, ForceSSL: true },
+      { Value: "example.com", HasCertificate: true, ForceSSL: true },
+    ],
+    edgeRules: before.map((r, i) => ({ Guid: `g${i}`, Description: r.Description, OrderIndex: i })),
+  });
+
+  await deploy("key", { ...config(dir), domain: "example.com", aliases: ["www.example.com"] });
+
+  const ruleWrites = writes.filter((w) => w.includes("/edgerules/"));
+  expect(ruleWrites[0]).toBe("DELETE https://api.bunny.net/pullzone/2/edgerules/g0");
+  expect(ruleWrites.slice(1)).toEqual([
+    "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
+    "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
+  ]);
 });
