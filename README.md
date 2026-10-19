@@ -19,7 +19,7 @@ Asks for the project name, build output directory, a custom domain and its alias
 2. a pull zone with the storage zone as its origin (available at `https://<name>.b-cdn.net`),
 3. the custom domain and its aliases, and requests a free SSL certificate for each.
 
-For a custom domain, point a `CNAME` record to `<name>.b-cdn.net`. For an apex domain (`example.com`) you need a DNS provider that supports `ALIAS`/CNAME flattening. If DNS is not set up yet, the certificate is requested again on every deploy until it works.
+For a custom domain, point a `CNAME` record to `<name>.b-cdn.net`. `init` and `deploy` print the record for each hostname they add to the pull zone. For an apex domain (`example.com`) you need a DNS provider that supports `ALIAS`/CNAME flattening. If DNS is not set up yet, the certificate is requested again on every deploy until it works.
 
 Each prompt can be skipped with a flag; an option no command knows stops with an error. Use `--yes` for non-interactive setup:
 

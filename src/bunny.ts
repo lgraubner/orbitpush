@@ -135,12 +135,16 @@ export async function ensureDomains(
 
   for (const domain of hostnames) {
     let hostname = pullZone.Hostnames.find((h) => h.Value.toLowerCase() === domain);
+    const added = !hostname;
     if (!hostname) {
+      log.step(`Adding hostname ${domain}`);
       await api(apiKey, {
         method: "POST",
         path: `/pullzone/${config.pullZoneId}/addHostname`,
         body: { Hostname: domain },
       });
+      log.warn("Create this DNS record at your DNS provider:");
+      log.detail(`${domain} CNAME ${cdnHost}`);
       hostname = { Value: domain, HasCertificate: false, ForceSSL: false };
     }
 
@@ -154,6 +158,8 @@ export async function ensureDomains(
         (error: unknown) => errorMessage(error),
       );
       if (failure) {
+        if (added) continue;
+
         log.warn(
           `No SSL certificate for ${domain} yet. Point a CNAME record to ${cdnHost} and deploy again. bunny.net: ${failure}`,
         );

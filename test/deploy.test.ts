@@ -351,6 +351,44 @@ test("deploy adds a new domain, requests its certificate and forces SSL", async 
   });
 });
 
+test("deploy prints the DNS record for each hostname it adds to the pull zone", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny({
+    hostnames: [
+      { Value: "site.b-cdn.net", HasCertificate: true, ForceSSL: true },
+      { Value: "www.example.com", HasCertificate: true, ForceSSL: true },
+    ],
+  });
+
+  await deploy("key", {
+    ...config(dir),
+    domain: "www.example.com",
+    aliases: ["example.com", "old.example.com"],
+  });
+
+  const output = stderr.mock.calls.join("");
+  expect(output).toMatch(/[^.]example\.com CNAME site\.b-cdn\.net/);
+  expect(output).toContain("old.example.com CNAME site.b-cdn.net");
+  expect(output).not.toContain("www.example.com CNAME");
+});
+
+test("deploy gives one DNS instruction for a hostname it adds before DNS points to it", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { requests } = fakeBunny({ certificateFails: true });
+
+  await deploy("key", { ...config(dir), domain: "www.example.com" });
+
+  expect(domainRequests(requests)).toEqual([
+    "POST https://api.bunny.net/pullzone/2/addHostname",
+    "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=www.example.com",
+  ]);
+  const output = stderr.mock.calls.join("");
+  expect(output).toContain("www.example.com CNAME site.b-cdn.net");
+  expect(output).not.toContain("No SSL certificate");
+});
+
 test("deploy forces SSL on a domain that has a certificate without requesting another", async () => {
   const dir = await outputDir();
   const { requests, bodies } = fakeBunny({
@@ -380,7 +418,7 @@ test("deploy warns and skips Force SSL when the certificate cannot be obtained",
     "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=www.example.com",
   ]);
   expect(writes).toContain("POST https://api.bunny.net/pullzone/2/purgeCache");
-  expect(stderr.mock.calls.join("")).toContain("www.example.com");
+  expect(stderr.mock.calls.join("")).toContain("No SSL certificate for www.example.com");
 });
 
 test("deploy leaves a domain with certificate and Force SSL alone, matching case-insensitively", async () => {
