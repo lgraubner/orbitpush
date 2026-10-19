@@ -8,7 +8,7 @@ The settings in `orbitpush.json` are applied on every deploy: replication region
 - `settings-404` without that line and with a `404.html` in the output serves it for missing files; without the file, no custom 404.
 - `settings-replication` sends the replication regions without the main region.
 - `settings-geo` enables exactly the listed delivery regions.
-- `settings-domains` adds the custom domain, requests SSL and forces HTTPS once a certificate exists; a removed domain or alias stays, and every deploy warns about each pull zone hostname that is neither `<name>.b-cdn.net` nor in `orbitpush.json`.
+- `settings-domains` adds the custom domain, requests SSL and forces HTTPS once a certificate exists; a removed domain or alias stays, and every deploy warns about each pull zone hostname that is neither `<name>.b-cdn.net` nor in `orbitpush.json`. `deploy --prune-hostnames` removes those hostnames instead (`DELETE /pullzone/<id>/removeHostname`).
 - `settings-aliases` adds each alias with SSL like a domain and writes a managed 301 rule to `https://<domain>%{Url.Path}`; with a domain, a managed `X-Robots-Tag: noindex` rule matches `<name>.b-cdn.net`, lowercased. Both come before the rule-file rules.
 - `settings-trailing-slash` adds one managed rule for `trailingSlash` `always` (the default, redirect extensionless HTML paths to `/`) or `never` (redirect `/path/` away from the slash); `ignore` adds none. SPA mode defaults it to `ignore`.
 - `settings-invalid` rejects an invalid `orbitpush.json` with a list of problems before any request.

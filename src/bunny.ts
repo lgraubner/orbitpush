@@ -103,7 +103,12 @@ export function getPullZone(apiKey: string, pullZoneId: number) {
   return apiJson(apiKey, { schema: PullZone, method: "GET", path: `/pullzone/${pullZoneId}` });
 }
 
-export async function ensureDomains(apiKey: string, config: Config, pullZone: PullZone) {
+export async function ensureDomains(
+  apiKey: string,
+  config: Config,
+  pullZone: PullZone,
+  { prune = false }: { prune?: boolean } = {},
+) {
   const cdnHost = `${pullZone.Name}.b-cdn.net`;
   const hostnames = (config.domain ? [config.domain, ...config.aliases] : []).map((host) =>
     host.toLowerCase(),
@@ -113,8 +118,18 @@ export async function ensureDomains(apiKey: string, config: Config, pullZone: Pu
     const host = Value.toLowerCase();
     if (host === cdnHost.toLowerCase() || hostnames.includes(host)) continue;
 
+    if (prune) {
+      log.step(`Removing hostname ${Value}`);
+      await api(apiKey, {
+        method: "DELETE",
+        path: `/pullzone/${config.pullZoneId}/removeHostname`,
+        body: { Hostname: Value },
+      });
+      continue;
+    }
+
     log.warn(
-      `${Value} is on the pull zone but not in ${CONFIG_FILE}, so it serves the site without a redirect. Add it to aliases, or remove it in the bunny.net dashboard.`,
+      `${Value} is on the pull zone but not in ${CONFIG_FILE}, so it serves the site without a redirect. Add it to aliases, or deploy with --prune-hostnames to remove it.`,
     );
   }
 

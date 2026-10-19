@@ -33,6 +33,9 @@ Init options (skip the matching prompt):
   --region <code>    Main storage region (DE, UK, SE, NY, LA, SG, SYD, BR, JH)
   -y, --yes          Use defaults for everything else
 
+Deploy options:
+  --prune-hostnames  Remove hostnames from the pull zone that orbitpush.json does not list
+
 Destroy options:
   -y, --yes          Delete without asking to type the project name
 
@@ -54,7 +57,9 @@ try {
     await init(args.flags, interactive);
   } else if (args.command === "deploy") {
     const started = Date.now();
-    await deploy(apiKeyFromEnv(), await readConfig());
+    await deploy(apiKeyFromEnv(), await readConfig(), {
+      pruneHostnames: args.flags["prune-hostnames"],
+    });
     log.success(`Deployed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   } else if (args.command === "disable") {
     await disable(apiKeyFromEnv(), await readConfig());

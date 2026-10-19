@@ -61,6 +61,7 @@ function fakeBunny({
   const uploads: string[] = [];
   const bodies: Record<string, unknown> = {};
   const edgeRuleWrites: unknown[] = [];
+  const hostnameRemovals: unknown[] = [];
 
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init = {}) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -78,6 +79,9 @@ function fakeBunny({
     if (typeof init.body === "string") bodies[`${method} ${url}`] = JSON.parse(init.body);
     if (url.endsWith("/edgerules/addOrUpdate") && typeof init.body === "string") {
       edgeRuleWrites.push(JSON.parse(init.body));
+    }
+    if (url.endsWith("/removeHostname") && typeof init.body === "string") {
+      hostnameRemovals.push(JSON.parse(init.body));
     }
 
     if (method === "PUT") {
@@ -130,7 +134,7 @@ function fakeBunny({
     return new Response(null, { status: 201 });
   });
 
-  return { requests, writes, bodies, uploads, edgeRuleWrites };
+  return { requests, writes, bodies, uploads, edgeRuleWrites, hostnameRemovals };
 }
 
 async function settleWithFakeTimers<T>(promise: Promise<T>) {
@@ -739,20 +743,21 @@ test("deploy warns about a symlinked directory instead of skipping it silently",
   expect(stderr.mock.calls.join("")).toMatch(/linked/);
 });
 
+const zoneHostnames = [
+  { Value: "site.b-cdn.net", HasCertificate: true, ForceSSL: false },
+  { Value: "www.example.com", HasCertificate: true, ForceSSL: true },
+  { Value: "Example.com", HasCertificate: true, ForceSSL: true },
+  { Value: "old.example.com", HasCertificate: true, ForceSSL: true },
+];
+
 test("deploy warns about a hostname on the pull zone that orbitpush.json no longer lists", async () => {
   const dir = await outputDir();
   const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-  fakeBunny({
-    hostnames: [
-      { Value: "site.b-cdn.net", HasCertificate: true, ForceSSL: false },
-      { Value: "www.example.com", HasCertificate: true, ForceSSL: true },
-      { Value: "Example.com", HasCertificate: true, ForceSSL: true },
-      { Value: "old.example.com", HasCertificate: true, ForceSSL: true },
-    ],
-  });
+  const { hostnameRemovals } = fakeBunny({ hostnames: zoneHostnames });
 
   await deploy("key", { ...config(dir), domain: "www.example.com", aliases: ["example.com"] });
 
+  expect(hostnameRemovals).toEqual([]);
   const warnings = stderr.mock.calls.map(String).filter((line) => line.includes("!"));
   expect(warnings.filter((line) => line.includes("old.example.com"))).toHaveLength(1);
   expect(warnings.filter((line) => /b-cdn\.net|www\.example\.com|Example\.com/.test(line))).toEqual(
@@ -803,5 +808,44 @@ test("deploy deletes the old alias redirect before writing the swapped one, so t
   expect(ruleWrites.slice(1)).toEqual([
     "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
     "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
+  ]);
+});
+
+test("deploy with pruneHostnames removes every hostname orbitpush.json does not list, except b-cdn.net", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { hostnameRemovals } = fakeBunny({
+    hostnames: [
+      ...zoneHostnames,
+      { Value: "Dashboard.example.org", HasCertificate: true, ForceSSL: true },
+    ],
+  });
+
+  await deploy(
+    "key",
+    { ...config(dir), domain: "www.example.com", aliases: ["example.com"] },
+    { pruneHostnames: true },
+  );
+
+  expect(hostnameRemovals).toEqual([
+    { Hostname: "old.example.com" },
+    { Hostname: "Dashboard.example.org" },
+  ]);
+  expect(stderr.mock.calls.map(String).filter((line) => line.includes("!"))).toEqual(
+    expect.not.arrayContaining([expect.stringMatching(/old\.example\.com|Dashboard/)]),
+  );
+});
+
+test("deploy with pruneHostnames and no domain removes every custom hostname", async () => {
+  const dir = await outputDir();
+  vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { hostnameRemovals } = fakeBunny({ hostnames: zoneHostnames });
+
+  await deploy("key", config(dir), { pruneHostnames: true });
+
+  expect(hostnameRemovals).toEqual([
+    { Hostname: "www.example.com" },
+    { Hostname: "Example.com" },
+    { Hostname: "old.example.com" },
   ]);
 });

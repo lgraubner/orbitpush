@@ -198,6 +198,11 @@ function api(state, url, method, headers, body) {
       return reply(204);
     }
 
+    if (action === "removeHostname" && method === "DELETE") {
+      zone.Hostnames = zone.Hostnames.filter((h) => h.Value !== json.Hostname);
+      return reply(204);
+    }
+
     if (action === "setForceSSL" && method === "POST") {
       zone.Hostnames.find((h) => h.Value === json.Hostname).ForceSSL = json.ForceSSL;
       return reply(204);

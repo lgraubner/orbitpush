@@ -32,7 +32,11 @@ import {
 
 const RULE_FILES = ["_headers", "_redirects"];
 
-export async function deploy(apiKey: string, config: Config) {
+export async function deploy(
+  apiKey: string,
+  config: Config,
+  { pruneHostnames = false }: { pruneHostnames?: boolean } = {},
+) {
   const zone = await apiJson(apiKey, {
     schema: StorageZone,
     method: "GET",
@@ -75,7 +79,13 @@ export async function deploy(apiKey: string, config: Config) {
     upload,
   );
 
-  await applySettings(apiKey, { config, pullZone, spa, has404: files.has("404.html") });
+  await applySettings(apiKey, {
+    config,
+    pullZone,
+    spa,
+    has404: files.has("404.html"),
+    pruneHostnames,
+  });
   await syncRules(apiKey, pullZone, rules);
 
   if (stale.length) {
@@ -137,7 +147,8 @@ async function applySettings(
     pullZone,
     spa,
     has404,
-  }: { config: Config; pullZone: PullZone; spa: boolean; has404: boolean },
+    pruneHostnames,
+  }: { config: Config; pullZone: PullZone; spa: boolean; has404: boolean; pruneHostnames: boolean },
 ) {
   log.step("Applying settings");
   await api(apiKey, {
@@ -162,7 +173,7 @@ async function applySettings(
       CacheControlPublicMaxAgeOverride: 0,
     },
   });
-  await ensureDomains(apiKey, config, pullZone);
+  await ensureDomains(apiKey, config, pullZone, { prune: pruneHostnames });
 }
 
 function checkRuleLimit(pullZone: PullZone, rules: EdgeRule[]) {

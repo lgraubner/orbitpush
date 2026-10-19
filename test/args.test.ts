@@ -34,3 +34,10 @@ test.each(["region", "domain"])("rejects --%s when it is given twice", (flag) =>
 test.each([["--domian"], ["-x"]])("rejects %s, which no command knows", (flag) => {
   expect(() => parseArgs(["init", flag, "www.a.test", "-y"])).toThrow(` ${flag}.`);
 });
+
+test("parses --prune-hostnames for deploy", () => {
+  expect(parseArgs(["deploy", "--prune-hostnames"])).toMatchObject({
+    command: "deploy",
+    flags: { "prune-hostnames": true },
+  });
+});

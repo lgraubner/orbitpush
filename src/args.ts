@@ -7,6 +7,7 @@ const Argv = z.object({
   help: z.optional(z.boolean()),
   version: z.optional(z.boolean()),
   yes: z.optional(z.boolean()),
+  "prune-hostnames": z.optional(z.boolean()),
   name: z.optional(z.string()),
   dir: z.optional(z.string()),
   region: z.optional(z.string()),
@@ -15,7 +16,7 @@ const Argv = z.object({
 });
 
 const OPTIONS = {
-  boolean: ["help", "version", "yes"],
+  boolean: ["help", "version", "yes", "prune-hostnames"],
   string: ["name", "dir", "domain", "alias", "region"],
   alias: { h: "help", v: "version", y: "yes" },
 };
