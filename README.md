@@ -54,6 +54,23 @@ In CI, set `BUNNY_API_KEY` as a secret:
     BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
 ```
 
+## Without a terminal (CI, scripts, agents)
+
+orbitpush asks nothing when stdin or stderr is not a terminal, or when `CI` is set to anything but `false` or `0`. Every question then has to be answered by a flag, and the API key comes from `BUNNY_API_KEY`:
+
+```bash
+export BUNNY_API_KEY=...
+npx orbitpush init --name my-site --dir dist --domain www.example.com --alias example.com \
+  --region DE --replication-region NY --delivery-region EU --delivery-region US --yes
+npm run build
+npx orbitpush deploy
+```
+
+- Commit `orbitpush.json` after `init`. Without a terminal, `deploy` never creates a site; it stops when the file is missing.
+- `deploy`, `disable` and `enable` take no input. `destroy` needs `--yes`.
+- Errors go to stderr with exit code `1`, an unknown command exits with `2`, and an unknown option stops with `1`, so a typo never falls back to a default.
+- Some coding agents run commands in a pseudo-terminal, where orbitpush would ask its questions and wait. Set `CI=1` for them, or pass `--yes` to `init`.
+
 ## `orbitpush.json`
 
 Commit this file. It never contains the API key.

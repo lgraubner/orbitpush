@@ -34,10 +34,9 @@ test("reads a valid orbitpush.json written before aliases existed", async () => 
   await expect(readConfig()).resolves.toEqual({ ...expected, aliases: [] });
 });
 
-test("tells the user to run init when orbitpush.json is missing", async () => {
-  await expect(readConfig()).rejects.toThrow(
-    "orbitpush.json not found. Run `orbitpush init` first.",
-  );
+test("tells the user to run init when orbitpush.json is missing, also without a terminal", async () => {
+  await expect(readConfig()).rejects.toThrow(/orbitpush\.json not found\. Run `orbitpush init`/);
+  await expect(readConfig()).rejects.toThrow(/`orbitpush init --name <name> --dir <dir> --yes`/);
 });
 
 test("reports an unreadable orbitpush.json as unreadable, not as missing", async () => {

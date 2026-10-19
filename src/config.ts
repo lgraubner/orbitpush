@@ -6,7 +6,7 @@ import { issues, z } from "./zod.ts";
 
 export const CONFIG_FILE = "orbitpush.json";
 export const SCHEMA_URL = "https://unpkg.com/orbitpush/schema.json";
-export const MISSING_CONFIG = `${CONFIG_FILE} not found. Run \`orbitpush init\` first.`;
+export const MISSING_CONFIG = `${CONFIG_FILE} not found. Run \`orbitpush init\` first, or \`orbitpush init --name <name> --dir <dir> --yes\` without a terminal.`;
 
 // Storage regions: https://docs.bunny.net/storage/http
 export const STORAGE_REGIONS = ["DE", "UK", "SE", "NY", "LA", "SG", "SYD", "BR", "JH"] as const;

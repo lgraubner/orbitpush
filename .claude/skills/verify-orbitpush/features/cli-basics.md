@@ -8,7 +8,7 @@ The command surface every user and CI script relies on: help and version on stdo
 - `cli-version` with `--version` or `-v` prints the package version on stdout.
 - `cli-unknown` prints usage on stderr for an unknown command, with exit `2`.
 - `cli-no-key` stops with a link to the API key page when `BUNNY_API_KEY` is missing.
-- `cli-no-config` tells the user to run init when `orbitpush.json` is missing.
+- `cli-no-config` tells the user to run init when `orbitpush.json` is missing, naming `orbitpush init --name <name> --dir <dir> --yes` for use without a terminal.
 - `cli-cancel` exits `130` when a prompt is cancelled with Ctrl-C.
 - `cli-bad-flag` rejects a single-value flag given twice, and an option no command knows (`--domian`), with exit `1`.
 - `cli-colors` writes no color codes when stderr is redirected away from the terminal, even while stdout is one.
