@@ -25,12 +25,14 @@
     },
     "domain": {
       "type": "string",
+      "format": "hostname",
       "description": "Custom domain. Added with a free SSL certificate on deploy; removing it here does not remove it from bunny.net."
     },
     "aliases": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "format": "hostname"
       },
       "description": "Hostnames, added with a free SSL certificate, that 301-redirect to domain. Requires domain and must not repeat it."
     },

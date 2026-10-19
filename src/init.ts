@@ -9,8 +9,10 @@ import {
   apiJson,
   apiKeyFromEnv,
   CreatedZone,
+  ensureDomains,
   envApiKey,
   geoZoneFlags,
+  getPullZone,
 } from "./bunny.ts";
 import {
   aliasProblem,
@@ -18,11 +20,11 @@ import {
   CONFIG_FILE,
   GEO_ZONES,
   type GeoZone,
+  Hostname,
   Region,
   STORAGE_REGIONS,
   writeConfig,
 } from "./config.ts";
-import { ensureDomains } from "./deploy.ts";
 import { errorMessage, log } from "./log.ts";
 
 export type InitFlags = {
@@ -63,20 +65,32 @@ export async function init(flags: InitFlags, interactive: boolean) {
     input({ message: "Build output directory", default: defaultDir }),
   );
   const domain =
-    (await ask(flags.domain, "", () => input({ message: "Custom domain (optional)" }))).trim() ||
-    undefined;
+    (
+      await ask(flags.domain, "", () =>
+        input({
+          message: "Custom domain (optional)",
+          validate: (v) => hostnameProblem(v.trim() ? [v.trim()] : []) ?? true,
+        }),
+      )
+    ).trim() || undefined;
+  const domainProblem = hostnameProblem(domain ? [domain] : []);
+  if (domainProblem) throw new Error(`Invalid --domain: ${domainProblem}`);
+
   const aliasFlag = flags.alias === undefined ? undefined : [flags.alias].flat().join(",");
   const aliases = splitList(
     await ask(aliasFlag, "", () =>
       domain
         ? input({
             message: `Aliases that redirect to ${domain}, comma separated (optional)`,
-            validate: (v) => aliasProblem({ domain, aliases: splitList(v) }) ?? true,
+            validate: (v) =>
+              hostnameProblem(splitList(v)) ??
+              aliasProblem({ domain, aliases: splitList(v) }) ??
+              true,
           })
         : Promise.resolve(""),
     ),
   );
-  const problem = aliasProblem({ domain, aliases });
+  const problem = hostnameProblem(aliases) ?? aliasProblem({ domain, aliases });
   if (problem) throw new Error(`Invalid --alias: ${problem}`);
 
   const regionAnswer = await ask(flags.region, "DE", () =>
@@ -147,10 +161,18 @@ export async function init(flags: InitFlags, interactive: boolean) {
 
   log.success(`Created ${CONFIG_FILE}`);
 
-  const cdnHost = await ensureDomains(apiKey, config);
+  const cdnHost = await ensureDomains(apiKey, config, await getPullZone(apiKey, config.pullZoneId));
   log.success(`Ready: https://${cdnHost}`);
   if (!envApiKey()) log.detail("Set BUNNY_API_KEY in your environment before deploying.");
   log.detail("Next: build your site, then run `npx orbitpush deploy`");
+}
+
+function hostnameProblem(hosts: string[]) {
+  const invalid = hosts.find((host) => !Hostname.safeParse(host).success);
+
+  return invalid === undefined
+    ? undefined
+    : `"${invalid}" is not a hostname, such as www.example.com`;
 }
 
 function splitList(value: string) {

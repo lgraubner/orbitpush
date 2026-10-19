@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -43,6 +43,8 @@ function fakeBunny({
   hostnames = [],
   certificateFails = false,
   storageUnauthorized = 0,
+  failUpload,
+  hang,
 }: {
   storageZone?: Record<string, unknown>;
   edgeRules?: Record<string, unknown>[];
@@ -50,6 +52,8 @@ function fakeBunny({
   hostnames?: { Value: string; HasCertificate: boolean; ForceSSL: boolean }[];
   certificateFails?: boolean;
   storageUnauthorized?: number;
+  failUpload?: string;
+  hang?: string;
 } = {}) {
   let unauthorized = storageUnauthorized;
   const requests: string[] = [];
@@ -64,6 +68,12 @@ function fakeBunny({
     const json = (value: unknown) => new Response(JSON.stringify(value));
 
     requests.push(`${method} ${url}`);
+    if (url === hang) {
+      return new Promise((_, reject) =>
+        init.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
+      );
+    }
+
     if (method !== "GET") writes.push(`${method} ${url}`);
     if (typeof init.body === "string") bodies[`${method} ${url}`] = JSON.parse(init.body);
     if (url.endsWith("/edgerules/addOrUpdate") && typeof init.body === "string") {
@@ -73,6 +83,8 @@ function fakeBunny({
     if (method === "PUT") {
       const path = url.replace("https://storage.bunnycdn.com/site/", "");
       uploads.push(`start ${path}`);
+      if (path === failUpload) return new Response("boom", { status: 500 });
+
       await new Promise((resolve) =>
         setTimeout(resolve, slowAssets && !path.endsWith(".html") ? 30 : 0),
       );
@@ -674,4 +686,101 @@ test("deploy adds new rules before deleting old ones while the zone has room", a
   const ruleWrites = writes.filter((w) => w.includes("/edgerules/"));
   expect(ruleWrites.at(-1)).toMatch(/^DELETE /);
   expect(ruleWrites[0]).toMatch(/^POST /);
+});
+
+test("deploy turns the 404 page off when the output directory has no 404.html", async () => {
+  const dir = await outputDir();
+  await rm(join(dir, "404.html"));
+  const { bodies } = fakeBunny();
+
+  await deploy("key", config(dir));
+
+  expect(bodies["POST https://api.bunny.net/storagezone/1"]).toMatchObject({
+    Rewrite404To200: false,
+    Custom404FilePath: "",
+  });
+});
+
+test("deploy counts the disabled rule toward the edge rule limit", async () => {
+  const dir = await outputDir();
+  await writeFile(join(dir, "_redirects"), redirectLines(49));
+  const { writes } = fakeBunny({
+    edgeRules: [{ Guid: "off", Description: "orbitpush disabled", OrderIndex: 0 }],
+  });
+
+  await expect(deploy("key", config(dir))).rejects.toThrow(/50 edge rules/);
+  expect(writes).toEqual([]);
+});
+
+test("deploy uploads a symlinked file with the content it points to", async () => {
+  const dir = await outputDir();
+  const outside = await mkdtemp(join(tmpdir(), "orbitpush-outside-"));
+  await writeFile(join(outside, "shared.css"), "shared");
+  await symlink(join(outside, "shared.css"), join(dir, "assets", "shared.css"));
+  const { bodies, writes } = fakeBunny();
+  const put = "PUT https://storage.bunnycdn.com/site/assets/shared.css";
+
+  await deploy("key", config(dir));
+
+  expect(writes).toContain(put);
+  expect(bodies).not.toHaveProperty(put);
+});
+
+test("deploy warns about a symlinked directory instead of skipping it silently", async () => {
+  const dir = await outputDir();
+  const outside = await mkdtemp(join(tmpdir(), "orbitpush-outside-"));
+  await writeFile(join(outside, "page.html"), "page");
+  await symlink(outside, join(dir, "linked"));
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny();
+
+  await deploy("key", config(dir));
+
+  expect(stderr.mock.calls.join("")).toMatch(/linked/);
+});
+
+test("deploy warns about a hostname on the pull zone that orbitpush.json no longer lists", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny({
+    hostnames: [
+      { Value: "site.b-cdn.net", HasCertificate: true, ForceSSL: false },
+      { Value: "www.example.com", HasCertificate: true, ForceSSL: true },
+      { Value: "Example.com", HasCertificate: true, ForceSSL: true },
+      { Value: "old.example.com", HasCertificate: true, ForceSSL: true },
+    ],
+  });
+
+  await deploy("key", { ...config(dir), domain: "www.example.com", aliases: ["example.com"] });
+
+  const warnings = stderr.mock.calls.map(String).filter((line) => line.includes("!"));
+  expect(warnings.filter((line) => line.includes("old.example.com"))).toHaveLength(1);
+  expect(warnings.filter((line) => /b-cdn\.net|www\.example\.com|Example\.com/.test(line))).toEqual(
+    [],
+  );
+});
+
+test("deploy starts no further upload once one has failed", async () => {
+  const dir = await outputDir();
+  for (let i = 0; i < 20; i++) await writeFile(join(dir, "assets", `f${i}.js`), String(i));
+  vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { uploads } = fakeBunny({ slowAssets: true, failUpload: "assets/f0.js" });
+
+  await expect(deploy("key", config(dir))).rejects.toThrow(/PUT \/assets\/f0\.js failed/);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  expect(uploads.filter((u) => u.startsWith("start "))).toHaveLength(8);
+});
+
+test.each([
+  ["a bunny.net API request", "https://api.bunny.net/storagezone/1", /GET \/storagezone\/1 failed/],
+  ["a storage zone listing", "https://storage.bunnycdn.com/site/", /GET \/ failed/],
+  ["a stale file deletion", "https://storage.bunnycdn.com/site/gone.html", /DELETE \/gone\.html/],
+])("deploy fails instead of hanging when %s never answers", async (_, url, message) => {
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  vi.spyOn(AbortSignal, "timeout").mockImplementation(() => timeout(10));
+  const dir = await outputDir();
+  fakeBunny({ hang: url });
+
+  await expect(deploy("key", config(dir))).rejects.toThrow(message);
 });

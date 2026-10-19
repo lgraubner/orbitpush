@@ -170,3 +170,25 @@ test.each([
   await expect(init({ name: "site", yes: true, ...flags }, false)).rejects.toThrow(/alias/i);
   expect(writes).toEqual([]);
 });
+
+test.each([
+  ["with a space", "my site"],
+  ["with a dot", "my.site"],
+  ["that is empty", ""],
+])("init rejects a name %s before sending anything to bunny.net", async (_, name) => {
+  const { writes } = fakeBunny();
+
+  await expect(init({ name, yes: true }, false)).rejects.toThrow(/name/i);
+  expect(writes).toEqual([]);
+});
+
+test.each([
+  ["a domain with a scheme", { domain: "https://www.example.com" }],
+  ["a domain with a path", { domain: "www.example.com/" }],
+  ["an alias with a port", { domain: "www.example.com", alias: ["example.com:8080"] }],
+])("init rejects %s before sending anything to bunny.net", async (_, flags) => {
+  const { writes } = fakeBunny();
+
+  await expect(init({ name: "site", yes: true, ...flags }, false)).rejects.toThrow(/hostname/);
+  expect(writes).toEqual([]);
+});

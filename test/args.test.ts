@@ -30,3 +30,7 @@ test("parses a command with its flags", () => {
 test.each(["region", "domain"])("rejects --%s when it is given twice", (flag) => {
   expect(() => parseArgs(["init", `--${flag}`, "a", `--${flag}`, "b"])).toThrow(flag);
 });
+
+test.each([["--domian"], ["-x"]])("rejects %s, which no command knows", (flag) => {
+  expect(() => parseArgs(["init", flag, "www.a.test", "-y"])).toThrow(` ${flag}.`);
+});

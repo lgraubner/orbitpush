@@ -1,6 +1,12 @@
 import { expect, test } from "vitest";
 
-import { parseHeaders, parseRedirects, toPattern, trailingSlashRule } from "../src/rules.ts";
+import {
+  domainRules,
+  parseHeaders,
+  parseRedirects,
+  toPattern,
+  trailingSlashRule,
+} from "../src/rules.ts";
 
 test("paths become Lua patterns on the full URL", () => {
   expect(toPattern("/").pattern).toBe("pattern:^https?://[^/]+/?$");
@@ -299,4 +305,12 @@ test("a Country= redirect with more than 5 countries becomes one rule per 5, bec
   expect(new Set(rules.map((r) => r.Triggers[0].PatternMatches[0])).size).toBe(1);
   expect(new Set(rules.map((r) => r.ActionParameter1)).size).toBe(1);
   expect(new Set(rules.map((r) => r.Description)).size).toBe(2);
+});
+
+test("the noindex rule matches the b-cdn.net host in lowercase, as browsers send it", () => {
+  const rules = domainRules({ name: "MySite", domain: "www.example.com", aliases: [] });
+
+  expect(rules.map((r) => r.Triggers[0].PatternMatches)).toEqual([
+    ["pattern:^https?://mysite%.b%-cdn%.net/.*$"],
+  ]);
 });

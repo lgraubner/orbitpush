@@ -39,7 +39,9 @@ Destroy options:
 Environment:
   BUNNY_API_KEY      Your bunny.net account API key (required)`;
 
-const interactive = Boolean(process.stdin.isTTY && process.stderr.isTTY) && !process.env.CI;
+const ci = process.env.CI;
+const interactive =
+  Boolean(process.stdin.isTTY && process.stderr.isTTY) && (!ci || ci === "false" || ci === "0");
 
 try {
   const args = parseArgs(process.argv.slice(2));

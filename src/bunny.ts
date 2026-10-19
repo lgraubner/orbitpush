@@ -1,5 +1,5 @@
-import { GEO_ZONES, type GeoZone } from "./config.ts";
-import { log } from "./log.ts";
+import { type Config, CONFIG_FILE, GEO_ZONES, type GeoZone } from "./config.ts";
+import { errorMessage, log } from "./log.ts";
 import { issues, z } from "./zod.ts";
 
 export const API_KEY_URL = "https://dash.bunny.net/account/api-key";
@@ -39,6 +39,8 @@ const Listing = z.array(
 
 const ErrorBody = z.object({ Message: z.string() });
 
+const REQUEST_TIMEOUT_MS = 120_000;
+
 export function envApiKey() {
   return process.env.BUNNY_API_KEY?.trim() || undefined;
 }
@@ -67,6 +69,9 @@ export async function api(apiKey: string, { method, path, body }: ApiRequest) {
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  }).catch((error: unknown) => {
+    throw new Error(`${method} ${path} failed: ${errorMessage(error)}`);
   });
   if (!response.ok) {
     throw new ApiError(`${method} ${path} failed: ${await errorText(response)}`, response.status);
@@ -98,6 +103,64 @@ export function getPullZone(apiKey: string, pullZoneId: number) {
   return apiJson(apiKey, { schema: PullZone, method: "GET", path: `/pullzone/${pullZoneId}` });
 }
 
+export async function ensureDomains(apiKey: string, config: Config, pullZone: PullZone) {
+  const cdnHost = `${pullZone.Name}.b-cdn.net`;
+  const hostnames = (config.domain ? [config.domain, ...config.aliases] : []).map((host) =>
+    host.toLowerCase(),
+  );
+
+  for (const { Value } of pullZone.Hostnames) {
+    const host = Value.toLowerCase();
+    if (host === cdnHost.toLowerCase() || hostnames.includes(host)) continue;
+
+    log.warn(
+      `${Value} is on the pull zone but not in ${CONFIG_FILE}, so it serves the site without a redirect. Add it to aliases, or remove it in the bunny.net dashboard.`,
+    );
+  }
+
+  for (const domain of hostnames) {
+    let hostname = pullZone.Hostnames.find((h) => h.Value.toLowerCase() === domain);
+    if (!hostname) {
+      await api(apiKey, {
+        method: "POST",
+        path: `/pullzone/${config.pullZoneId}/addHostname`,
+        body: { Hostname: domain },
+      });
+      hostname = { Value: domain, HasCertificate: false, ForceSSL: false };
+    }
+
+    if (!hostname.HasCertificate) {
+      const query = `hostname=${encodeURIComponent(domain)}`;
+      const failure = await api(apiKey, {
+        method: "GET",
+        path: `/pullzone/loadFreeCertificate?${query}`,
+      }).then(
+        () => undefined,
+        (error: unknown) => errorMessage(error),
+      );
+      if (failure) {
+        log.warn(
+          `No SSL certificate for ${domain} yet. Point a CNAME record to ${cdnHost} and deploy again. bunny.net: ${failure}`,
+        );
+        continue;
+      }
+    }
+
+    if (!hostname.ForceSSL) {
+      await api(apiKey, {
+        method: "POST",
+        path: `/pullzone/${config.pullZoneId}/setForceSSL`,
+        body: {
+          Hostname: domain,
+          ForceSSL: true,
+        },
+      });
+    }
+  }
+
+  return cdnHost;
+}
+
 export async function purgeCache(apiKey: string, pullZoneId: number) {
   log.step("Purging cache");
   await api(apiKey, { method: "POST", path: `/pullzone/${pullZoneId}/purgeCache` });
@@ -112,13 +175,15 @@ export function storage(zone: StorageZone) {
   const request = async (
     method: string,
     path: string,
-    init: { body?: Blob; headers?: Record<string, string> } = {},
+    init: { body?: Blob; headers?: Record<string, string>; signal?: AbortSignal } = {},
   ) => {
     for (let attempt = 1; ; attempt++) {
       const response = await fetch(url(path), {
         ...init,
         method,
         headers: { AccessKey: zone.Password, ...init.headers },
+      }).catch((error: unknown) => {
+        throw new Error(`${method} /${path} failed: ${errorMessage(error)}`);
       });
       // bunny.net rejects a new storage zone's password for a few seconds after it is created
       if (response.status === 401 && attempt < STORAGE_AUTH_ATTEMPTS) {
@@ -135,7 +200,8 @@ export function storage(zone: StorageZone) {
   return {
     put: ({ path, data, checksum }: { path: string; data: Blob; checksum: string }) =>
       request("PUT", path, { body: data, headers: { Checksum: checksum.toUpperCase() } }),
-    delete: (path: string) => request("DELETE", path),
+    delete: (path: string) =>
+      request("DELETE", path, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }),
     async list() {
       const files = new Map<string, string>();
       let dirs = [""];
@@ -143,7 +209,9 @@ export function storage(zone: StorageZone) {
       while (dirs.length) {
         const subdirs: string[] = [];
         await pool(dirs, 8, async (dir) => {
-          const response = await request("GET", dir);
+          const response = await request("GET", dir, {
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          });
           const entries = parseResponse(
             Listing,
             await response.json().catch(() => undefined),
@@ -192,10 +260,16 @@ async function errorText(response: Response) {
 
 export async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<unknown>) {
   let next = 0;
+  let failed = false;
 
   await Promise.all(
     Array.from({ length: Math.min(size, items.length) }, async () => {
-      while (next < items.length) await fn(items[next++]);
+      while (!failed && next < items.length) {
+        await fn(items[next++]).catch((error: unknown) => {
+          failed = true;
+          throw error;
+        });
+      }
     }),
   );
 }

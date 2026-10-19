@@ -26,6 +26,12 @@ const SERVED_STATUS = new Map([
 export const RULE_PREFIX = "orbitpush ";
 export const DISABLED_RULE = `${RULE_PREFIX}disabled`;
 
+export function isManaged<T extends { Description: string | null }>(
+  rule: T,
+): rule is T & { Description: string } {
+  return Boolean(rule.Description?.startsWith(RULE_PREFIX)) && rule.Description !== DISABLED_RULE;
+}
+
 type EdgeRuleAction = { ActionType: number; ActionParameter1: string; ActionParameter2: string };
 
 type Trigger = {
@@ -135,6 +141,7 @@ export function domainRules({
   if (!domain) return [];
 
   const main = domain.toLowerCase();
+  const cdnHost = `${name.toLowerCase()}.b-cdn.net`;
 
   const redirects = aliases.map((alias) =>
     rule({
@@ -150,8 +157,8 @@ export function domainRules({
     }),
   );
   const noindex = rule({
-    description: `noindex ${name}.b-cdn.net`,
-    pattern: toPattern(`https://${name}.b-cdn.net/*`).pattern,
+    description: `noindex ${cdnHost}`,
+    pattern: toPattern(`https://${cdnHost}/*`).pattern,
     actions: [
       {
         ActionType: SET_RESPONSE_HEADER,
@@ -264,9 +271,7 @@ export function parseRedirects(text: string): Parsed & { spa: boolean } {
 
     try {
       const { pattern, params } = toPattern(from);
-      const target = to.replace(/:([A-Za-z_]\w*)/g, (placeholder, name: string) => {
-        if (/^https?$/.test(name) && to.startsWith(`${name}:`)) return placeholder;
-
+      const target = to.replace(/:([A-Za-z_]\w*)/g, (_, name: string) => {
         const index = params.get(name);
         if (index === undefined) throw new Error(`":${name}" is not defined in "${from}"`);
 

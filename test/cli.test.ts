@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -44,24 +44,41 @@ test("a runtime error exits with 1", () => {
 // A prompt needs a TTY, so the CLI runs under script(1), which gives it a pseudo-terminal
 const script = ["/usr/bin/script", "/bin/script"].find((path) => existsSync(path));
 
-test.skipIf(!script)(
-  "cancelling a prompt with Ctrl+C exits with 130",
-  async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "orbitpush-cli-"));
-    const offline = join(cwd, "offline.mjs");
-    writeFileSync(offline, 'globalThis.fetch = () => { throw new Error("offline"); };');
-    const env: NodeJS.ProcessEnv = { ...process.env, BUNNY_API_KEY: "not-a-key" };
-    delete env.CI;
-    const command = [process.execPath, "--import", offline, entry, "init"]
-      .map((arg) => `'${arg}'`)
-      .join(" ");
-    // BSD script(1) rejects a socket as stdin, so cat turns Node's stdin socket into a pipe.
-    // The util-linux script takes the command as one string, the BSD script as arguments.
-    const pty =
-      process.platform === "linux"
-        ? `${script} -qec "${command}" /dev/null`
-        : `${script} -q /dev/null ${command}`;
-    const child = spawn("/bin/sh", ["-c", `cat | ${pty}`], { cwd, env });
+function inTerminal(cwd: string, env: NodeJS.ProcessEnv, command: string) {
+  // BSD script(1) rejects a socket as stdin, so cat turns Node's stdin socket into a pipe.
+  // The util-linux script takes the command as one string, the BSD script as arguments.
+  const pty =
+    process.platform === "linux"
+      ? `${script} -qec "${command}" /dev/null`
+      : `${script} -q /dev/null /bin/sh -c "${command}"`;
+
+  return spawn("/bin/sh", ["-c", `cat | ${pty}`], { cwd, env });
+}
+
+function offlineDir() {
+  const cwd = mkdtempSync(join(tmpdir(), "orbitpush-cli-"));
+  const offline = join(cwd, "offline.mjs");
+  writeFileSync(offline, 'globalThis.fetch = () => { throw new Error("offline"); };');
+
+  return { cwd, offline };
+}
+
+const quoted = (...args: string[]) => args.map((arg) => `'${arg}'`).join(" ");
+
+test.skipIf(!script).each([
+  ["unset", undefined],
+  ["false", "false"],
+])(
+  "cancelling a prompt with Ctrl+C exits with 130, with CI %s",
+  async (_, ci) => {
+    const { cwd, offline } = offlineDir();
+    const env: NodeJS.ProcessEnv = { ...process.env, BUNNY_API_KEY: "not-a-key", CI: ci };
+    if (ci === undefined) delete env.CI;
+    const child = inTerminal(
+      cwd,
+      env,
+      quoted(process.execPath, "--import", offline, entry, "init"),
+    );
 
     const status = await new Promise<number | null>((resolve) => {
       child.stdout.on("data", (chunk: Buffer) => {
@@ -72,6 +89,25 @@ test.skipIf(!script)(
 
     expect(status).toBe(130);
     expect(existsSync(join(cwd, "orbitpush.json"))).toBe(false);
+  },
+  10_000,
+);
+
+test.skipIf(!script)(
+  "output redirected away from the terminal carries no color codes",
+  async () => {
+    const { cwd } = offlineDir();
+    const env: NodeJS.ProcessEnv = { ...process.env, BUNNY_API_KEY: "not-a-key" };
+    delete env.FORCE_COLOR;
+    delete env.NO_COLOR;
+    const child = inTerminal(cwd, env, `${quoted(process.execPath, entry, "deploy")} 2> err.txt`);
+    child.stdin.end();
+
+    await new Promise((resolve) => child.on("close", resolve));
+
+    const stderr = readFileSync(join(cwd, "err.txt"), "utf8");
+    expect(stderr).toMatch(/orbitpush\.json not found/);
+    expect(stderr).not.toContain("\u001b[");
   },
   10_000,
 );

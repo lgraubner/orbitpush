@@ -17,12 +17,14 @@ export const Region = z.enum(STORAGE_REGIONS);
 export type Region = z.infer<typeof Region>;
 export type GeoZone = (typeof GEO_ZONES)[number];
 
+export const Hostname = z.string().check(z.hostname());
+
 const ConfigSchema = z
   .object({
     name: z.string(),
     outputDir: z.string(),
-    domain: z.optional(z.string()),
-    aliases: z._default(z.array(z.string()), []),
+    domain: z.optional(Hostname),
+    aliases: z._default(z.array(Hostname), []),
     region: Region,
     replicationRegions: z.array(Region),
     geoZones: z.array(z.enum(GEO_ZONES)).check(z.minLength(1)),

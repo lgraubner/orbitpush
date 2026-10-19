@@ -114,3 +114,12 @@ test.each([
 
   await expect(readConfig()).rejects.toThrow(/aliases/);
 });
+
+test.each([
+  ["domain", { domain: "https://www.example.com" }],
+  ["aliases", { aliases: ["example.com/"] }],
+])("rejects a value in %s that is not a hostname", async (field, fields) => {
+  await writeFile("orbitpush.json", JSON.stringify({ ...valid, ...fields }));
+
+  await expect(readConfig()).rejects.toThrow(new RegExp(`${field}.*hostname`));
+});

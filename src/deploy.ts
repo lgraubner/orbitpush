@@ -1,29 +1,31 @@
 import { createHash } from "node:crypto";
 import { openAsBlob } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
 import {
   api,
   apiJson,
+  ensureDomains,
   geoZoneFlags,
   getPullZone,
   pool,
   purgeCache,
+  type PullZone,
   StorageZone,
   storage,
 } from "./bunny.ts";
 import type { Config } from "./config.ts";
 import { isMissing, readIfExists } from "./files.ts";
-import { errorMessage, log } from "./log.ts";
+import { log } from "./log.ts";
 import {
   DISABLED_RULE,
   domainRules,
   MAX_EDGE_RULES,
   type EdgeRule,
+  isManaged,
   parseHeaders,
   parseRedirects,
-  RULE_PREFIX,
   trailingSlashRule,
 } from "./rules.ts";
 
@@ -45,7 +47,8 @@ export async function deploy(apiKey: string, config: Config) {
     ...trailingSlashRule(config.trailingSlash ?? (spa ? "ignore" : "always")),
   ];
 
-  await checkRuleLimit(apiKey, config.pullZoneId, rules);
+  const pullZone = await getPullZone(apiKey, config.pullZoneId);
+  checkRuleLimit(pullZone, rules);
 
   log.step("Comparing with storage zone");
   const bucket = storage(zone);
@@ -71,8 +74,8 @@ export async function deploy(apiKey: string, config: Config) {
     upload,
   );
 
-  await applySettings(apiKey, { config, spa, has404: files.has("404.html") });
-  await syncRules(apiKey, config.pullZoneId, rules);
+  await applySettings(apiKey, { config, pullZone, spa, has404: files.has("404.html") });
+  await syncRules(apiKey, pullZone, rules);
 
   if (stale.length) {
     log.step(`Deleting ${stale.length} stale files`);
@@ -93,10 +96,14 @@ async function readOutput(dir: string) {
   const files = new Map<string, { absolute: string; checksum: string }>();
 
   for (const entry of entries) {
-    if (!entry.isFile()) continue;
-
     const absolute = join(entry.parentPath, entry.name);
     const path = relative(dir, absolute).split(sep).join("/");
+    if (entry.isSymbolicLink() && (await stat(absolute)).isDirectory()) {
+      log.warn(`${path} links to a directory, which deploy does not follow. Copy it instead.`);
+      continue;
+    }
+
+    if (!entry.isFile() && !entry.isSymbolicLink()) continue;
     if (RULE_FILES.includes(path)) continue;
 
     const checksum = createHash("sha256")
@@ -124,7 +131,12 @@ async function readRules(dir: string) {
 
 async function applySettings(
   apiKey: string,
-  { config, spa, has404 }: { config: Config; spa: boolean; has404: boolean },
+  {
+    config,
+    pullZone,
+    spa,
+    has404,
+  }: { config: Config; pullZone: PullZone; spa: boolean; has404: boolean },
 ) {
   log.step("Applying settings");
   await api(apiKey, {
@@ -149,62 +161,11 @@ async function applySettings(
       CacheControlPublicMaxAgeOverride: 0,
     },
   });
-  await ensureDomains(apiKey, config);
+  await ensureDomains(apiKey, config, pullZone);
 }
 
-export async function ensureDomains(apiKey: string, config: Config) {
-  const pullZone = await getPullZone(apiKey, config.pullZoneId);
-  const cdnHost = `${pullZone.Name}.b-cdn.net`;
-
-  const hostnames = config.domain ? [config.domain, ...config.aliases] : [];
-  for (const domain of hostnames.map((d) => d.toLowerCase())) {
-    let hostname = pullZone.Hostnames.find((h) => h.Value.toLowerCase() === domain);
-    if (!hostname) {
-      await api(apiKey, {
-        method: "POST",
-        path: `/pullzone/${config.pullZoneId}/addHostname`,
-        body: { Hostname: domain },
-      });
-      hostname = { Value: domain, HasCertificate: false, ForceSSL: false };
-    }
-
-    if (!hostname.HasCertificate) {
-      const query = `hostname=${encodeURIComponent(domain)}`;
-      const failure = await api(apiKey, {
-        method: "GET",
-        path: `/pullzone/loadFreeCertificate?${query}`,
-      }).then(
-        () => undefined,
-        (error: unknown) => errorMessage(error),
-      );
-      if (failure) {
-        log.warn(
-          `No SSL certificate for ${domain} yet. Point a CNAME record to ${cdnHost} and deploy again. bunny.net: ${failure}`,
-        );
-        continue;
-      }
-    }
-
-    if (!hostname.ForceSSL) {
-      await api(apiKey, {
-        method: "POST",
-        path: `/pullzone/${config.pullZoneId}/setForceSSL`,
-        body: {
-          Hostname: domain,
-          ForceSSL: true,
-        },
-      });
-    }
-  }
-
-  return cdnHost;
-}
-
-async function checkRuleLimit(apiKey: string, pullZoneId: number, rules: EdgeRule[]) {
-  const pullZone = await getPullZone(apiKey, pullZoneId);
-  const unmanaged = pullZone.EdgeRules.filter(
-    (r) => !r.Description?.startsWith(RULE_PREFIX) || r.Description === DISABLED_RULE,
-  );
+function checkRuleLimit(pullZone: PullZone, rules: EdgeRule[]) {
+  const unmanaged = pullZone.EdgeRules.filter((r) => !isManaged(r));
   const managed = new Set(rules.map((r) => r.Description)).size;
   // bunny.net rejects every edge rule write on a full zone, updates included
   if (managed + unmanaged.length < MAX_EDGE_RULES) return;
@@ -214,8 +175,8 @@ async function checkRuleLimit(apiKey: string, pullZoneId: number, rules: EdgeRul
   );
 }
 
-async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) {
-  const pullZone = await getPullZone(apiKey, pullZoneId);
+async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeRule[]) {
+  const pullZoneId = pullZone.Id;
   if (pullZone.EdgeRules.some((r) => r.Description === DISABLED_RULE)) {
     log.warn("The site is disabled. Run `orbitpush enable` to serve it again.");
   }
@@ -227,7 +188,7 @@ async function syncRules(apiKey: string, pullZoneId: number, rules: EdgeRule[]) 
 
   const kept = new Map<string, { Guid: string; OrderIndex: number }>();
   const removed = pullZone.EdgeRules.filter((r) => {
-    if (!r.Description?.startsWith(RULE_PREFIX) || r.Description === DISABLED_RULE) return false;
+    if (!isManaged(r)) return false;
     if (!wanted.has(r.Description) || kept.has(r.Description)) return true;
 
     kept.set(r.Description, r);

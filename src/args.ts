@@ -14,14 +14,22 @@ const Argv = z.object({
   alias: z.optional(z.union([z.string(), z.array(z.string())])),
 });
 
+const OPTIONS = {
+  boolean: ["help", "version", "yes"],
+  string: ["name", "dir", "domain", "alias", "region"],
+  alias: { h: "help", v: "version", y: "yes" },
+};
+const KNOWN = new Set(["_", ...OPTIONS.boolean, ...OPTIONS.string, ...Object.keys(OPTIONS.alias)]);
+
 export function parseArgs(argv: string[]) {
-  const result = Argv.safeParse(
-    mri(argv, {
-      boolean: ["help", "version", "yes"],
-      string: ["name", "dir", "domain", "alias", "region"],
-      alias: { h: "help", v: "version", y: "yes" },
-    }),
-  );
+  const parsed: Record<string, unknown> = mri(argv, structuredClone(OPTIONS));
+  const unknown = Object.keys(parsed).find((key) => !KNOWN.has(key));
+  if (unknown) {
+    const flag = `${unknown.length === 1 ? "-" : "--"}${unknown}`;
+    throw new Error(`Unknown option ${flag}. Run \`orbitpush --help\` for the options.`);
+  }
+
+  const result = Argv.safeParse(parsed);
   if (!result.success) {
     const problems = issues(result.error).map((issue) => `--${issue}`);
     throw new Error(`Invalid arguments: ${problems.join("; ")}`);

@@ -4,11 +4,11 @@
 
 ## Sub-features
 
-- `deploy-upload` uploads only files whose SHA256 checksum differs, HTML last.
+- `deploy-upload` uploads only files whose SHA256 checksum differs, HTML last. A symlinked file is uploaded with its target's content; a symlinked directory is skipped with a warning.
 - `deploy-stale` deletes files that are no longer in the output directory, after the upload.
 - `deploy-purge` purges the pull zone cache once per deploy.
 - `deploy-noop` uploads nothing and deletes nothing when nothing changed. It still re-sends the settings and rewrites every managed edge rule.
-- `deploy-safe-fail` stops before any write when the output directory or a rule file cannot be read. A failed upload stops before the stale delete and the purge.
+- `deploy-safe-fail` stops before any write when the output directory or a rule file cannot be read. A failed upload stops before the stale delete and the purge, and no further upload starts. A request that never answers fails after 120 s (uploads have no limit).
 
 ## How to get to it (user POV)
 

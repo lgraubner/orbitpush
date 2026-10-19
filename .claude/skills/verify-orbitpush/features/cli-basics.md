@@ -10,7 +10,8 @@ The command surface every user and CI script relies on: help and version on stdo
 - `cli-no-key` stops with a link to the API key page when `BUNNY_API_KEY` is missing.
 - `cli-no-config` tells the user to run init when `orbitpush.json` is missing.
 - `cli-cancel` exits `130` when a prompt is cancelled with Ctrl-C.
-- `cli-bad-flag` rejects a single-value flag given twice, with exit `1`.
+- `cli-bad-flag` rejects a single-value flag given twice, and an option no command knows (`--domian`), with exit `1`.
+- `cli-colors` writes no color codes when stderr is redirected away from the terminal, even while stdout is one.
 
 ## How to get to it (user POV)
 

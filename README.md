@@ -21,7 +21,7 @@ Asks for the project name, build output directory, a custom domain and its alias
 
 For a custom domain, point a `CNAME` record to `<name>.b-cdn.net`. For an apex domain (`example.com`) you need a DNS provider that supports `ALIAS`/CNAME flattening. If DNS is not set up yet, the certificate is requested again on every deploy until it works.
 
-Each prompt can be skipped with a flag. Use `--yes` for non-interactive setup:
+Each prompt can be skipped with a flag; an option no command knows stops with an error. Use `--yes` for non-interactive setup:
 
 ```bash
 npx orbitpush init --name my-site --dir dist --domain www.example.com --alias example.com --region DE --yes
@@ -34,7 +34,7 @@ If `init` fails before `orbitpush.json` is written, it deletes the zones it just
 ## `orbitpush deploy`
 
 1. Reads `orbitpush.json`, `BUNNY_API_KEY` and the rule files. A missing `_headers` or `_redirects` means no rules of that kind. A rule file that exists but cannot be read stops the deploy before anything changes.
-2. Compares the output directory with the storage zone using SHA256 checksums and uploads only changed files, HTML files last.
+2. Compares the output directory with the storage zone using SHA256 checksums and uploads only changed files, HTML files last. A symlinked file is uploaded with the content it points to; a symlinked directory is skipped with a warning.
 3. Applies the settings: [SPA mode](#spa-mode) or the [404 page](#404-page) from the output directory, and replication regions, delivery regions and domains from `orbitpush.json`.
 4. Turns `_headers` and `_redirects` into edge rules (see below).
 5. Deletes files from the storage zone that are no longer in the build.
@@ -71,15 +71,15 @@ Commit this file. It never contains the API key.
 
 Settings are applied on every deploy, so you can change them later:
 
-| Field                | Notes                                                                                                                                                                                                    |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `outputDir`          | Directory that gets deployed.                                                                                                                                                                            |
-| `domain`             | Optional. Custom domain, added with SSL. Removing it does **not** remove it from bunny.net.                                                                                                              |
-| `aliases`            | Optional. Hostnames added with SSL that 301-redirect every path and query to `domain`. Need a `domain`. At most 8: bunny.net allows 10 hostnames per pull zone, `<name>.b-cdn.net` and `domain` included |
-| `region`             | Main storage region. Fixed after `init`.                                                                                                                                                                 |
-| `replicationRegions` | Can only be added. bunny.net does not support removing replication regions.                                                                                                                              |
-| `geoZones`           | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`. At least one.                                                                                                                                      |
-| `trailingSlash`      | Optional. `always`, `never` or `ignore`, see [Trailing slashes](#trailing-slashes).                                                                                                                      |
+| Field                | Notes                                                                                                                                                                                                                                                                                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `outputDir`          | Directory that gets deployed.                                                                                                                                                                                                                                                                                                                        |
+| `domain`             | Optional. Custom domain, a hostname such as `www.example.com`, added with SSL. Removing it does **not** remove it from bunny.net; `deploy` warns about it until you remove it in the dashboard.                                                                                                                                                      |
+| `aliases`            | Optional. Hostnames added with SSL that 301-redirect every path and query to `domain`. Need a `domain`. At most 8: bunny.net allows 10 hostnames per pull zone, `<name>.b-cdn.net` and `domain` included. Removing one leaves it on the pull zone, serving the site without a redirect; `deploy` warns about it until you remove it in the dashboard |
+| `region`             | Main storage region. Fixed after `init`.                                                                                                                                                                                                                                                                                                             |
+| `replicationRegions` | Can only be added. bunny.net does not support removing replication regions.                                                                                                                                                                                                                                                                          |
+| `geoZones`           | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`. At least one.                                                                                                                                                                                                                                                                                  |
+| `trailingSlash`      | Optional. `always`, `never` or `ignore`, see [Trailing slashes](#trailing-slashes).                                                                                                                                                                                                                                                                  |
 
 ### Domains and search engines
 
