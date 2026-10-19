@@ -6,6 +6,7 @@ import { issues, z } from "./zod.ts";
 
 export const CONFIG_FILE = "orbitpush.json";
 export const SCHEMA_URL = "https://unpkg.com/orbitpush/schema.json";
+export const MISSING_CONFIG = `${CONFIG_FILE} not found. Run \`orbitpush init\` first.`;
 
 // Storage regions: https://docs.bunny.net/storage/http
 export const STORAGE_REGIONS = ["DE", "UK", "SE", "NY", "LA", "SG", "SYD", "BR", "JH"] as const;
@@ -57,8 +58,7 @@ export type Config = z.infer<typeof ConfigSchema>;
 
 export async function readConfig(): Promise<Config> {
   const raw = await readFile(CONFIG_FILE, "utf8").catch((error: unknown) => {
-    if (isMissing(error))
-      throw new Error(`${CONFIG_FILE} not found. Run \`orbitpush init\` first.`);
+    if (isMissing(error)) throw new Error(MISSING_CONFIG);
     throw error;
   });
 

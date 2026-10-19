@@ -4,6 +4,7 @@
 
 ## Sub-features
 
+- `deploy-setup` in a terminal without `orbitpush.json` asks `No orbitpush.json here. Set up a new site on bunny.net now?`, runs the init prompts (the output directory must exist) and deploys. Declining exits `1`, Ctrl-C `130`, both without creating anything. Without a terminal it exits `1` with no prompt. Drive it with `$C tui $RUN <step> -- deploy`.
 - `deploy-upload` uploads only files whose SHA256 checksum differs, HTML last. A symlinked file is uploaded with its target's content; a symlinked directory is skipped with a warning.
 - `deploy-stale` deletes files that are no longer in the output directory, after the upload.
 - `deploy-purge` purges the pull zone cache once per deploy.

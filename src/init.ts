@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
 
-import { checkbox, input, password, select } from "@inquirer/prompts";
+import { checkbox, confirm, input, password, select } from "@inquirer/prompts";
 
 import {
   api,
@@ -21,6 +21,7 @@ import {
   GEO_ZONES,
   GeoZone,
   Hostname,
+  MISSING_CONFIG,
   Region,
   STORAGE_REGIONS,
   writeConfig,
@@ -38,7 +39,21 @@ export type InitFlags = {
   yes?: boolean;
 };
 
-export async function init(flags: InitFlags, interactive: boolean) {
+export async function setUpForDeploy() {
+  const setUp = await confirm({
+    message: `No ${CONFIG_FILE} here. Set up a new site on bunny.net now?`,
+    default: true,
+  });
+  if (!setUp) throw new Error(MISSING_CONFIG);
+
+  return init({}, true, { deploying: true });
+}
+
+export async function init(
+  flags: InitFlags,
+  interactive: boolean,
+  { deploying = false }: { deploying?: boolean } = {},
+) {
   if (existsSync(CONFIG_FILE)) throw new Error(`${CONFIG_FILE} already exists.`);
 
   const prompt = interactive && !flags.yes;
@@ -64,7 +79,12 @@ export async function init(flags: InitFlags, interactive: boolean) {
 
   const defaultDir = ["dist", "build", "out", "public"].find((dir) => existsSync(dir)) ?? "dist";
   const outputDir = await ask(flags.dir, defaultDir, () =>
-    input({ message: "Build output directory", default: defaultDir }),
+    input({
+      message: "Build output directory",
+      default: defaultDir,
+      validate: (v) =>
+        !deploying || existsSync(v) || `${v} not found. Build the site, then run deploy again`,
+    }),
   );
   const domain =
     (
@@ -175,7 +195,9 @@ export async function init(flags: InitFlags, interactive: boolean) {
   const cdnHost = await ensureDomains(apiKey, config, await getPullZone(apiKey, config.pullZoneId));
   log.success(`Ready: https://${cdnHost}`);
   if (!envApiKey()) log.detail("Set BUNNY_API_KEY in your environment before deploying.");
-  log.detail("Next: build your site, then run `npx orbitpush deploy`");
+  if (!deploying) log.detail("Next: build your site, then run `npx orbitpush deploy`");
+
+  return { apiKey, config };
 }
 
 function hostnameProblem(hosts: string[]) {

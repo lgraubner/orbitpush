@@ -148,3 +148,55 @@ test("destroy without --yes outside a terminal exits with 1 and keeps orbitpush.
   expect(result.stderr).toMatch(/--yes/);
   expect(existsSync(join(cwd, "orbitpush.json"))).toBe(true);
 });
+
+function answerFirstPrompt(child: ReturnType<typeof inTerminal>, keys: string) {
+  let output = "";
+
+  return new Promise<{ status: number | null; output: string }>((resolve) => {
+    child.stdout.on("data", (chunk: Buffer) => {
+      output += chunk.toString();
+      if (output.includes("?") && child.stdin.writable) child.stdin.end(keys);
+    });
+    child.on("close", (status) => resolve({ status, output }));
+  });
+}
+
+test.skipIf(!script).each([
+  ["declining", "n\r", 1],
+  ["Ctrl+C", "\x03", 130],
+])(
+  "deploy without orbitpush.json in a terminal asks to set up a site, and %s creates nothing",
+  async (_, keys, expected) => {
+    const { cwd, offline } = offlineDir();
+    const env: NodeJS.ProcessEnv = { ...process.env, BUNNY_API_KEY: "not-a-key" };
+    delete env.CI;
+    const child = inTerminal(
+      cwd,
+      env,
+      quoted(process.execPath, "--import", offline, entry, "deploy"),
+    );
+
+    const { status, output } = await answerFirstPrompt(child, keys);
+
+    expect(output).toMatch(/Set up a new site/);
+    expect(status).toBe(expected);
+    expect(existsSync(join(cwd, "orbitpush.json"))).toBe(false);
+  },
+  10_000,
+);
+
+test("deploy without orbitpush.json outside a terminal asks nothing and exits with 1", () => {
+  const { cwd, offline } = offlineDir();
+  const env = { ...process.env, BUNNY_API_KEY: "not-a-key", CI: "1" };
+
+  const result = spawnSync(process.execPath, ["--import", offline, entry, "deploy"], {
+    cwd,
+    encoding: "utf8",
+    env,
+  });
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/orbitpush\.json not found/);
+  expect(result.stderr).not.toMatch(/Set up a new site/);
+  expect(existsSync(join(cwd, "orbitpush.json"))).toBe(false);
+});

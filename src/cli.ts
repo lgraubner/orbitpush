@@ -1,14 +1,15 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 
 import { parseArgs } from "./args.ts";
 import { apiKeyFromEnv } from "./bunny.ts";
-import { readConfig } from "./config.ts";
+import { CONFIG_FILE, readConfig } from "./config.ts";
 import { deploy } from "./deploy.ts";
 import { destroy } from "./destroy.ts";
 import { disable } from "./disable.ts";
 import { enable } from "./enable.ts";
-import { init } from "./init.ts";
+import { init, setUpForDeploy } from "./init.ts";
 import { errorMessage, log } from "./log.ts";
 import { z } from "./zod.ts";
 
@@ -58,10 +59,12 @@ try {
   } else if (args.command === "init") {
     await init(args.flags, interactive);
   } else if (args.command === "deploy") {
+    const site =
+      interactive && !existsSync(CONFIG_FILE)
+        ? await setUpForDeploy()
+        : { apiKey: apiKeyFromEnv(), config: await readConfig() };
     const started = Date.now();
-    await deploy(apiKeyFromEnv(), await readConfig(), {
-      pruneHostnames: args.flags["prune-hostnames"],
-    });
+    await deploy(site.apiKey, site.config, { pruneHostnames: args.flags["prune-hostnames"] });
     log.success(`Deployed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   } else if (args.command === "disable") {
     await disable(apiKeyFromEnv(), await readConfig());

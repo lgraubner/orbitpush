@@ -33,6 +33,8 @@ If `init` fails before `orbitpush.json` is written, it deletes the zones it just
 
 ## `orbitpush deploy`
 
+In a terminal, `deploy` without an `orbitpush.json` asks whether to set up a new site, asks the `init` questions, and deploys right after. The output directory must exist, so build first. Without a terminal it stops with an error instead, so CI never creates a site.
+
 1. Reads `orbitpush.json`, `BUNNY_API_KEY` and the rule files. A missing `_headers` or `_redirects` means no rules of that kind. A rule file that exists but cannot be read stops the deploy before anything changes.
 2. Compares the output directory with the storage zone using SHA256 checksums and uploads only changed files, HTML files last. A symlinked file is uploaded with the content it points to; a symlinked directory is skipped with a warning.
 3. Applies the settings: [SPA mode](#spa-mode) or the [404 page](#404-page) from the output directory, and replication regions, delivery regions and domains from `orbitpush.json`.
