@@ -15,7 +15,8 @@ export const TRAILING_SLASH = ["always", "never", "ignore"] as const;
 
 export const Region = z.enum(STORAGE_REGIONS);
 export type Region = z.infer<typeof Region>;
-export type GeoZone = (typeof GEO_ZONES)[number];
+export const GeoZone = z.enum(GEO_ZONES);
+export type GeoZone = z.infer<typeof GeoZone>;
 
 export const Hostname = z.string().check(z.hostname());
 
@@ -27,7 +28,7 @@ const ConfigSchema = z
     aliases: z._default(z.array(Hostname), []),
     region: Region,
     replicationRegions: z.array(Region),
-    geoZones: z.array(z.enum(GEO_ZONES)).check(z.minLength(1)),
+    geoZones: z.array(GeoZone).check(z.minLength(1)),
     trailingSlash: z.optional(z.enum(TRAILING_SLASH)),
     storageZoneId: z.int(),
     pullZoneId: z.int(),

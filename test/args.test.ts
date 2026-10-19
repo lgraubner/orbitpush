@@ -41,3 +41,19 @@ test("parses --prune-hostnames for deploy", () => {
     flags: { "prune-hostnames": true },
   });
 });
+
+test("parses repeatable --replication-region and --delivery-region", () => {
+  expect(
+    parseArgs([
+      "init",
+      "--replication-region",
+      "NY",
+      "--replication-region",
+      "SG",
+      "--delivery-region",
+      "EU",
+    ]),
+  ).toMatchObject({
+    flags: { "replication-region": ["NY", "SG"], "delivery-region": "EU" },
+  });
+});

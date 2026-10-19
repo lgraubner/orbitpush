@@ -26,21 +26,23 @@ Usage:
   orbitpush destroy  Delete the pull zone, storage zone and orbitpush.json
 
 Init options (skip the matching prompt):
-  --name <name>      Storage zone and pull zone name
-  --dir <path>       Build output directory
-  --domain <host>    Custom domain
-  --alias <host>     Hostname that redirects to the domain, repeatable
-  --region <code>    Main storage region (DE, UK, SE, NY, LA, SG, SYD, BR, JH)
-  -y, --yes          Use defaults for everything else
+  --name <name>                 Storage zone and pull zone name
+  --dir <path>                  Build output directory
+  --domain <host>               Custom domain
+  --alias <host>                Hostname that redirects to the domain, repeatable
+  --region <code>               Main storage region (DE, UK, SE, NY, LA, SG, SYD, BR, JH)
+  --replication-region <code>   Extra storage region, repeatable (default: none)
+  --delivery-region <zone>      CDN delivery region (EU, US, ASIA, SA, AF), repeatable (default: EU, US)
+  -y, --yes                     Use defaults for everything else
 
 Deploy options:
-  --prune-hostnames  Remove hostnames from the pull zone that orbitpush.json does not list
+  --prune-hostnames             Remove hostnames from the pull zone that orbitpush.json does not list
 
 Destroy options:
-  -y, --yes          Delete without asking to type the project name
+  -y, --yes                     Delete without asking to type the project name
 
 Environment:
-  BUNNY_API_KEY      Your bunny.net account API key (required)`;
+  BUNNY_API_KEY                 Your bunny.net account API key (required)`;
 
 const ci = process.env.CI;
 const interactive =

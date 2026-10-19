@@ -24,7 +24,7 @@ For a custom domain, point a `CNAME` record to `<name>.b-cdn.net`. For an apex d
 Each prompt can be skipped with a flag; an option no command knows stops with an error. Use `--yes` for non-interactive setup:
 
 ```bash
-npx orbitpush init --name my-site --dir dist --domain www.example.com --alias example.com --region DE --yes
+npx orbitpush init --name my-site --dir dist --domain www.example.com --alias example.com --region DE --delivery-region EU --delivery-region US --yes
 ```
 
 The pull zone and storage zone names are global across bunny.net. If the name is taken, choose another one.

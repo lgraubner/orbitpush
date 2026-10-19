@@ -192,3 +192,42 @@ test.each([
   await expect(init({ name: "site", yes: true, ...flags }, false)).rejects.toThrow(/hostname/);
   expect(writes).toEqual([]);
 });
+
+test("init sends the replication and delivery regions from their flags and writes them", async () => {
+  const { bodies } = fakeBunny();
+
+  await init(
+    {
+      name: "site",
+      "replication-region": ["ny", "SG"],
+      "delivery-region": "asia,eu",
+      yes: true,
+    },
+    false,
+  );
+
+  const written = JSON.parse(await readFile("orbitpush.json", "utf8")) as Record<string, unknown>;
+  expect(written).toMatchObject({ replicationRegions: ["NY", "SG"], geoZones: ["ASIA", "EU"] });
+  expect(bodies["POST https://api.bunny.net/storagezone"]).toMatchObject({
+    ReplicationRegions: ["NY", "SG"],
+  });
+  expect(bodies["POST https://api.bunny.net/pullzone"]).toMatchObject({
+    EnableGeoZoneASIA: true,
+    EnableGeoZoneEU: true,
+    EnableGeoZoneUS: false,
+    EnableGeoZoneSA: false,
+    EnableGeoZoneAF: false,
+  });
+});
+
+test.each([
+  ["an unknown replication region", { "replication-region": "MARS" }, /--replication-region/],
+  ["the main region as a replication region", { "replication-region": "de" }, /main region/],
+  ["an unknown delivery region", { "delivery-region": "EU,MOON" }, /--delivery-region/],
+  ["an empty delivery region list", { "delivery-region": "" }, /--delivery-region/],
+])("init rejects %s before sending anything to bunny.net", async (_, flags, message) => {
+  const { writes } = fakeBunny();
+
+  await expect(init({ name: "site", yes: true, ...flags }, false)).rejects.toThrow(message);
+  expect(writes).toEqual([]);
+});

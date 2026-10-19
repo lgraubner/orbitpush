@@ -14,7 +14,7 @@
 ## How to get to it (user POV)
 
 - Run `orbitpush init` in a terminal and answer the prompts.
-- Run `orbitpush init --name <n> --dir <d> [--domain <host>] [--alias <host>]... [--region <code>] --yes` in CI or a script.
+- Run `orbitpush init --name <n> --dir <d> [--domain <host>] [--alias <host>]... [--region <code>] [--replication-region <code>]... [--delivery-region <zone>]... --yes` in CI or a script. Every prompt has a flag.
 - Run `orbitpush init` without a TTY or with `CI` set: prompts are skipped and defaults are used.
 
 ## Driving it with ctl.sh

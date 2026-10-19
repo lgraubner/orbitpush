@@ -19,7 +19,7 @@ import {
   type Config,
   CONFIG_FILE,
   GEO_ZONES,
-  type GeoZone,
+  GeoZone,
   Hostname,
   Region,
   STORAGE_REGIONS,
@@ -33,6 +33,8 @@ export type InitFlags = {
   domain?: string;
   alias?: string | string[];
   region?: string;
+  "replication-region"?: string | string[];
+  "delivery-region"?: string | string[];
   yes?: boolean;
 };
 
@@ -99,19 +101,28 @@ export async function init(flags: InitFlags, interactive: boolean) {
   const region = Region.safeParse(regionAnswer.toUpperCase()).data;
   if (!region) throw new Error(`Region must be one of ${STORAGE_REGIONS.join(", ")}`);
 
-  const replicationRegions: Region[] = prompt
-    ? await checkbox({
-        message: "Storage replication regions (cannot be removed later)",
-        choices: STORAGE_REGIONS.filter((r) => r !== region),
-      })
-    : [];
-  const geoZones: GeoZone[] = prompt
-    ? await checkbox({
-        message: "CDN delivery regions",
-        choices: GEO_ZONES.map((value) => ({ value, checked: value === "EU" || value === "US" })),
-        validate: (v) => v.length > 0 || "Select at least one",
-      })
-    : ["EU", "US"];
+  const replicationAnswer: string[] = await ask(listFlag(flags["replication-region"]), [], () =>
+    checkbox({
+      message: "Storage replication regions (cannot be removed later)",
+      choices: STORAGE_REGIONS.filter((r) => r !== region),
+    }),
+  );
+  const replicationRegions = parseList(Region, replicationAnswer, "--replication-region");
+  if (replicationRegions.includes(region)) {
+    throw new Error(`Invalid --replication-region: ${region} is the main region`);
+  }
+
+  const deliveryAnswer: string[] = await ask(listFlag(flags["delivery-region"]), ["EU", "US"], () =>
+    checkbox({
+      message: "CDN delivery regions",
+      choices: GEO_ZONES.map((value) => ({ value, checked: value === "EU" || value === "US" })),
+      validate: (v) => v.length > 0 || "Select at least one",
+    }),
+  );
+  const geoZones = parseList(GeoZone, deliveryAnswer, "--delivery-region");
+  if (!geoZones.length) {
+    throw new Error(`Invalid --delivery-region: name at least one of ${GEO_ZONES.join(", ")}`);
+  }
 
   log.step(`Creating storage zone ${name}`);
   const storageZone = await apiJson(apiKey, {
@@ -173,6 +184,25 @@ function hostnameProblem(hosts: string[]) {
   return invalid === undefined
     ? undefined
     : `"${invalid}" is not a hostname, such as www.example.com`;
+}
+
+function listFlag(flag: string | string[] | undefined) {
+  return flag === undefined ? undefined : splitList([flag].flat().join(","));
+}
+
+function parseList<T extends string>(
+  schema: { safeParse(value: unknown): { data?: T }; options: readonly T[] },
+  values: string[],
+  flag: string,
+) {
+  return values.map((value) => {
+    const parsed = schema.safeParse(value.toUpperCase()).data;
+    if (parsed === undefined) {
+      throw new Error(`Invalid ${flag}: ${value} is not one of ${schema.options.join(", ")}`);
+    }
+
+    return parsed;
+  });
 }
 
 function splitList(value: string) {
