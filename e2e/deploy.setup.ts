@@ -4,15 +4,20 @@ import { sites, untilStatus } from "./site.ts";
 
 for (const s of Object.values(sites)) {
   setup(`init and deploy ${s.name}`, async () => {
-    expect((await s.init()).code).toBe(0);
+    const prepared = await s.init();
+    expect(prepared.code).toBe(0);
+    if (s === sites.multiPage) {
+      expect(prepared.stderr).toContain("netlify.toml headers.0.values.Basic-Auth not migrated");
+      expect(prepared.stderr).not.toContain("e2e-secret");
+    }
 
     const deploy = await s.cli("deploy");
     expect(deploy.code).toBe(0);
     if (s === sites.multiPage) {
       expect(deploy.stderr).toContain("redirects.3 status 308 is sent as 301");
-      expect(deploy.stderr).toContain("redirects.7 skipped");
-      expect(deploy.stderr).toContain("redirects.10 status 307 is sent as 302");
-      expect(deploy.stderr).toContain("headers.6.values.Basic-Auth skipped");
+      expect(deploy.stderr).toContain("redirects.5 skipped");
+      expect(deploy.stderr).toContain("redirects.8 status 307 is sent as 302");
+      expect(deploy.stderr).toContain("_redirects is not read");
       expect(deploy.stderr).not.toContain("e2e-secret");
       expect(deploy.stderr).toContain("headers.6.values.Content-Length skipped (not supported)");
       expect(deploy.stderr).toContain("headers.6.values.Server skipped (not supported)");

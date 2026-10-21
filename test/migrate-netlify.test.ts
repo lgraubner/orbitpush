@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -10,8 +10,10 @@ import {
   parseNetlifyToml,
   parseRedirectsFile,
 } from "../src/migrate-netlify.ts";
+import { headerRules, redirectRules } from "../src/rules.ts";
 
 const cwd = process.cwd();
+const e2eSites = resolve("e2e/sites");
 const base = {
   name: "s",
   outputDir: "public",
@@ -236,4 +238,56 @@ test("needs orbitpush.json", async () => {
   await writeFile("netlify.toml", '[[redirects]]\nfrom = "/a"\nto = "/b"\n');
 
   await expect(migrateNetlify()).rejects.toThrow(/orbitpush\.json not found/);
+});
+
+test("migrates the multi-page e2e site into the rules its e2e tests expect", async () => {
+  await setup({ ...base, aliases: [] });
+  const fill = (text: string) =>
+    text.replaceAll("{{domain}}", "www.example.com").replaceAll("{{country}}", "de");
+  for (const file of ["_redirects", "_headers"]) {
+    const text = await readFile(join(e2eSites, "multi-page", file), "utf8");
+    await writeFile(join("public", file), fill(text));
+  }
+  const toml = await readFile(join(e2eSites, "multi-page.netlify.toml"), "utf8");
+  await writeFile("netlify.toml", fill(toml));
+
+  await migrateNetlify();
+
+  const { redirects, headers } = JSON.parse(await readFile("orbitpush.json", "utf8"));
+  expect(redirects.map((r: { from: string; to: string }) => `${r.from} ${r.to}`)).toEqual([
+    "/old /pricing.html",
+    "/blog/:year/:slug /guides/:slug",
+    "/handbook/* /guides/:splat",
+    "/moved /contact.html",
+    "/first /pricing.html",
+    "/proxy /contact.html",
+    "https://www.example.com/domain-only /pricing.html",
+    "/shadowed.html /pricing.html",
+    "/temp /contact.html",
+    "/geo-here /pricing.html",
+    "/geo-many /pricing.html",
+    "/first /contact.html",
+    "/geo /contact.html",
+  ]);
+  expect(redirects[7]).toMatchObject({ status: 301, force: true });
+  expect(redirects[12]).toEqual({
+    from: "/geo",
+    to: "/contact.html",
+    status: 302,
+    conditions: { Country: ["aq"] },
+  });
+  expect(headers[0].values).toMatchObject({ "X-E2E-Multi": "a, b" });
+  expect(headers.at(-1)).toEqual({
+    for: "/pricing.html",
+    values: {
+      "Set-Cookie": "e2e=1; Path=/",
+      "cache-control": "max-age=0, no-cache",
+      "Content-Length": "1",
+      Server: "e2e",
+    },
+  });
+  expect(await readFile("orbitpush.json", "utf8")).not.toContain("e2e-secret");
+  expect(stderr).not.toContain("e2e-secret");
+  expect(redirectRules(redirects).rules).toHaveLength(13);
+  expect(headerRules(headers).rules).toHaveLength(7);
 });

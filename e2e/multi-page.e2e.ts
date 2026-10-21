@@ -196,6 +196,11 @@ test("headers: * inside a segment, Content-Type, Set-Cookie, case-insensitive jo
   expect(Number(pricing.headers["content-length"] ?? pricing.body.length)).toBeGreaterThan(1);
 });
 
+test("_headers and _redirects are not uploaded", async () => {
+  expect(await s.status(`${s.cdnUrl}/_headers/`)).toBe(404);
+  expect(await s.status(`${s.cdnUrl}/_redirects/`)).toBe(404);
+});
+
 test("headers also apply to 404 and redirect responses", async () => {
   const missing = await s.get(`${s.cdnUrl}/missing.html`);
   expect(missing.status).toBe(404);

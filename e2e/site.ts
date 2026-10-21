@@ -83,20 +83,33 @@ function site(
 
       await rm(dir, { recursive: true, force: true });
       await cp(join(SITES, demo), join(dir, "public"), { recursive: true });
+      const fill = (text: string) =>
+        text
+          .replaceAll("{{domain}}", customDomain ?? "")
+          .replaceAll("{{country}}", process.env.E2E_COUNTRY ?? "aq");
+      const redirects = join(dir, "public", "_redirects");
+      if (existsSync(redirects))
+        await writeFile(redirects, fill(await readFile(redirects, "utf8")));
+      const toml = join(SITES, `${demo}.netlify.toml`);
+      if (existsSync(toml)) {
+        await writeFile(join(dir, "netlify.toml"), fill(await readFile(toml, "utf8")));
+      }
+
       const domainFlags = customDomain ? ["--domain", customDomain, "--alias", alias ?? ""] : [];
       const result = await cli("init", "--name", name, "--dir", "public", ...domainFlags, "--yes");
       if (result.code !== 0) return result;
 
+      // A site with Netlify files is set up the way a Netlify user would: init, then migrate
+      if (existsSync(toml)) return cli("migrate-netlify");
+
       const extra = join(SITES, `${demo}.orbitpush.json`);
       if (!existsSync(extra)) return result;
 
-      const text = (await readFile(extra, "utf8"))
-        .replaceAll("{{domain}}", customDomain ?? "")
-        .replaceAll("{{country}}", process.env.E2E_COUNTRY ?? "aq");
       const file = join(dir, "orbitpush.json");
+      const config: object = JSON.parse(await readFile(file, "utf8"));
       await writeFile(
         file,
-        JSON.stringify({ ...JSON.parse(await readFile(file, "utf8")), ...JSON.parse(text) }),
+        JSON.stringify({ ...config, ...JSON.parse(fill(await readFile(extra, "utf8"))) }),
       );
       return result;
     },

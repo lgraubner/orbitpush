@@ -1,0 +1,12 @@
+# Netlify applies these before the redirects in netlify.toml
+/old                  /pricing.html
+/blog/:year/:slug      /guides/:slug              302
+/handbook/*           /guides/:splat             302
+/moved                /contact.html              308
+/first                /pricing.html              302
+/proxy                /contact.html              200
+https://{{domain}}/domain-only  /pricing.html  302
+/shadowed.html  /pricing.html  301!
+/temp  /contact.html  307
+/geo-here  /pricing.html  302 Country={{country}}
+/geo-many  /pricing.html  302 Country=aq,ar,au,br,ca,{{country}}

@@ -1,0 +1,17 @@
+# Applies to every path
+/*
+  X-Frame-Options: DENY
+  X-E2E-Block: root
+  X-E2E-Multi: a
+  x-e2e-multi: b
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*.css
+  # Wildcard inside a segment
+  X-E2E-Css: yes
+/guides/*
+  X-E2E-Block: guides
+/guides/:page
+  X-E2E-Page: placeholder
+/.well-known/apple-app-site-association
+  Content-Type: application/json

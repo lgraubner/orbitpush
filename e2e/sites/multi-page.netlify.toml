@@ -1,0 +1,26 @@
+[build]
+publish = "public"
+
+# Also matches /first, so it proves that _redirects stays first
+[[redirects]]
+from = "/first"
+to = "/contact.html"
+status = 302
+
+[[redirects]]
+from = "/geo"
+to = "/contact.html"
+status = 302
+conditions = { Country = ["aq"] }
+signed = "API_SIGNATURE_TOKEN"
+
+[[headers]]
+for = "/pricing.html"
+[headers.values]
+Set-Cookie = "e2e=1; Path=/"
+cache-control = '''
+  max-age=0,
+  no-cache'''
+Basic-Auth = "user:e2e-secret"
+Content-Length = "1"
+Server = "e2e"
