@@ -2,7 +2,7 @@ import { styleText } from "node:util";
 
 const write = (text: string) => process.stderr.write(`${text}\n`);
 // styleText decides on colors from process.stdout unless it is given the stream it writes to
-const style = (format: Parameters<typeof styleText>[0], text: string) =>
+export const style = (format: Parameters<typeof styleText>[0], text: string) =>
   styleText(format, text, { stream: process.stderr });
 
 export const log = {

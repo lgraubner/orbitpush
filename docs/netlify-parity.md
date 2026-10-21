@@ -2,19 +2,19 @@
 
 Which Netlify features for static sites can be built on a storage zone and pull zone. Researched 2026-10-18 against the [edge rule API](https://bunny.net/docs/api-reference/core/pull-zone/addupdate-edge-rule). Rows marked _inferred_ or _guess_ have not been tried against a real pull zone.
 
-orbitpush uses two edge rule actions today, `Redirect` (1) and `SetResponseHeader` (5), and sets `OrderIndex` to the file position.
+orbitpush uses two edge rule actions today, `Redirect` (1) and `SetResponseHeader` (5), and sets `OrderIndex` to the position in `orbitpush.json`.
 
 ## Covered
 
-| Netlify                                                                             | orbitpush                     |
-| ----------------------------------------------------------------------------------- | ----------------------------- |
-| Static deploy behind a CDN                                                          | storage zone + pull zone      |
-| `_redirects` 301/302 (303/307 as 302, 308 as 301), `:placeholders`, `:splat`, hosts | edge rule `Redirect`          |
-| `_headers`                                                                          | edge rule `SetResponseHeader` |
-| `/* /index.html 200` (SPA mode), `404.html`                                         | storage zone settings         |
-| Custom domains with free SSL                                                        | `addHostname` + certificate   |
-| `Country=` condition                                                                | trigger `CountryCode` (4)     |
-| Upload only changed files, cache purge                                              | SHA256 diff + purge           |
+| Netlify                                                                                                                    | orbitpush                     |
+| -------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| Static deploy behind a CDN                                                                                                 | storage zone + pull zone      |
+| `[[redirects]]` 301/302 (303/307 as 302, 308 as 301), `:placeholders`, `:splat`, hosts, as `redirects` in `orbitpush.json` | edge rule `Redirect`          |
+| `[[headers]]`, as `headers` in `orbitpush.json`                                                                            | edge rule `SetResponseHeader` |
+| `/*` to `/index.html` 200 (SPA mode), `404.html`                                                                           | storage zone settings         |
+| Custom domains with free SSL                                                                                               | `addHostname` + certificate   |
+| `Country` condition                                                                                                        | trigger `CountryCode` (4)     |
+| Upload only changed files, cache purge                                                                                     | SHA256 diff + purge           |
 
 ## Possible with edge rules
 

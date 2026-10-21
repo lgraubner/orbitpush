@@ -27,11 +27,16 @@ afterEach(() => {
   process.chdir(cwd);
 });
 
-test("reads a valid orbitpush.json written before aliases existed", async () => {
+test("reads a valid orbitpush.json written before aliases, redirects and headers existed", async () => {
   await writeFile("orbitpush.json", JSON.stringify(valid));
 
   const { $schema: _schema, ...expected } = valid;
-  await expect(readConfig()).resolves.toEqual({ ...expected, aliases: [] });
+  await expect(readConfig()).resolves.toEqual({
+    ...expected,
+    aliases: [],
+    redirects: [],
+    headers: [],
+  });
 });
 
 test("tells the user to run init when orbitpush.json is missing, also without a terminal", async () => {
@@ -95,7 +100,9 @@ test("reads 8 aliases, the most bunny.net's 10 hostnames per pull zone leave roo
 test("reads aliases next to the domain", async () => {
   await writeFile("orbitpush.json", JSON.stringify({ ...valid, aliases: ["example.com"] }));
 
-  await expect(readConfig()).resolves.toMatchObject({ aliases: ["example.com"] });
+  await expect(readConfig()).resolves.toMatchObject({
+    aliases: ["example.com"],
+  });
 });
 
 test.each([
@@ -121,4 +128,81 @@ test.each([
   await writeFile("orbitpush.json", JSON.stringify({ ...valid, ...fields }));
 
   await expect(readConfig()).rejects.toThrow(new RegExp(`${field}.*hostname`));
+});
+
+test("reads redirects and headers in the shape of netlify.toml, with status defaulting to 301", async () => {
+  const redirects = [
+    { from: "/old", to: "/new" },
+    {
+      from: "/de/*",
+      to: "/de/:splat",
+      status: 302,
+      force: true,
+      query: { id: ":id" },
+      conditions: { Country: ["de", "at"] },
+    },
+  ];
+  const headers = [{ for: "/*", values: { "X-Frame-Options": "DENY" } }];
+  await writeFile("orbitpush.json", JSON.stringify({ ...valid, redirects, headers }));
+
+  await expect(readConfig()).resolves.toMatchObject({
+    redirects: [{ from: "/old", to: "/new", status: 301 }, redirects[1]],
+    headers,
+  });
+});
+
+test("accepts well-formed redirects that deploy cannot apply", async () => {
+  const redirects = [
+    { from: "/en/*", to: "/en/:splat", conditions: { Language: ["en"] } },
+    { from: "/app/*", to: "/index.html", status: 200 },
+  ];
+  await writeFile("orbitpush.json", JSON.stringify({ ...valid, redirects }));
+
+  await expect(readConfig()).resolves.toMatchObject({ redirects });
+});
+
+test.each([
+  [
+    "a misspelled key",
+    /redirects\.0\b.*stauts/,
+    { redirects: [{ from: "/a", to: "/b", stauts: 302 }] },
+  ],
+  ["signed", /redirects\.0\b.*signed/, { redirects: [{ from: "/a", to: "/b", signed: "SECRET" }] }],
+  ["a missing to", /redirects\.0\.to/, { redirects: [{ from: "/a" }] }],
+  [
+    "a string status",
+    /redirects\.0\.status/,
+    { redirects: [{ from: "/a", to: "/b", status: "301" }] },
+  ],
+  [
+    "a fractional status",
+    /redirects\.0\.status/,
+    { redirects: [{ from: "/a", to: "/b", status: 301.5 }] },
+  ],
+  [
+    "an empty condition list",
+    /redirects\.0\.conditions/,
+    { redirects: [{ from: "/a", to: "/b", conditions: { Country: [] } }] },
+  ],
+  [
+    "a header value that is not a string",
+    /headers\.1\.values/,
+    {
+      headers: [
+        { for: "/*", values: {} },
+        { for: "/a", values: { "Cache-Control": ["no-cache"] } },
+      ],
+    },
+  ],
+  ["missing header values", /headers\.0\.values/, { headers: [{ for: "/*" }] }],
+  [
+    "an unknown header key",
+    /headers\.0\b.*source/,
+    { headers: [{ for: "/*", values: {}, source: "/a" }] },
+  ],
+])("rejects %s and names its path", async (_, path, fields) => {
+  await writeFile("orbitpush.json", JSON.stringify({ ...valid, ...fields }));
+
+  await expect(readConfig()).rejects.toThrow(/^Invalid orbitpush\.json/);
+  await expect(readConfig()).rejects.toThrow(path);
 });

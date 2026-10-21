@@ -20,7 +20,7 @@ All commands below run from the repository root. `C=.claude/skills/verify-orbitp
 $C launch $RUN
 ```
 
-Builds `dist/cli.js` (`npm run build`), creates the work dir `$TMPDIR/orbitpush-verify/$RUN/site` from `fixtures/site/`, and the evidence dir `.verify-artifacts/$RUN/` (gitignored). Ready when it prints `ready: <version>`. The fixture is a built site in `public/` with `index.html`, `404.html`, `about.html`, `assets/app.js`, a `_redirects` with three supported and two unsupported lines, and a `_headers` with two path blocks. It has no `orbitpush.json`: every journey starts with `init`.
+Builds `dist/cli.js` (`npm run build`), creates the work dir `$TMPDIR/orbitpush-verify/$RUN/site` from `fixtures/site/`, and the evidence dir `.verify-artifacts/$RUN/` (gitignored). Ready when it prints `ready: <version>`. The fixture is a built site in `public/` with `index.html`, `404.html`, `about.html`, `assets/app.js`, and, beside `public/`, a `rules.json` with `redirects` (three supported, two unsupported) and `headers` (two entries). It has no `orbitpush.json`: every journey starts with `init`. A journey that needs the rules merges them into `orbitpush.json` after `init`: `jq -s '.[0] + .[1]' orbitpush.json rules.json > o.json && mv o.json orbitpush.json` in the work dir.
 
 Runs are isolated by run ID: separate work dir, state file, evidence dir, and tmux session `orbitpush-verify-$RUN`. Parallel runs are safe. Never reuse another run's ID.
 

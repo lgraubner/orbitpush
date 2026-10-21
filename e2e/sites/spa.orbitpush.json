@@ -1,0 +1,8 @@
+{
+  "trailingSlash": "never",
+  "redirects": [
+    { "from": "/*", "to": "/index.html", "status": 200 },
+    { "from": "/old-projects", "to": "/projects", "status": 301 }
+  ],
+  "headers": [{ "for": "/*", "values": { "X-E2E-Spa": "yes" } }]
+}

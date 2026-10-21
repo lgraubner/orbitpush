@@ -5,9 +5,9 @@ import { basename, dirname, join } from "node:path";
 
 import { afterEach, expect, test, vi } from "vitest";
 
-import type { Config } from "../src/config.ts";
+import type { Config, Redirect } from "../src/config.ts";
 import { deploy } from "../src/deploy.ts";
-import { domainRules, parseRedirects } from "../src/rules.ts";
+import { domainRules, redirectRules } from "../src/rules.ts";
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex").toUpperCase();
 
@@ -16,7 +16,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function config(outputDir: string): Config {
+const redirects = (lines = ""): Redirect[] =>
+  lines
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [from, to, status = "301"] = line.split(" ");
+      return { from, to, status: Number(status) };
+    });
+
+function config(outputDir: string, redirectLines?: string): Config {
   return {
     name: "site",
     outputDir,
@@ -25,12 +34,14 @@ function config(outputDir: string): Config {
     replicationRegions: ["DE", "NY"],
     geoZones: ["EU"],
     trailingSlash: "ignore",
+    redirects: redirects(redirectLines),
+    headers: [],
     storageZoneId: 1,
     pullZoneId: 2,
   };
 }
 
-const kept = parseRedirects("/a /b").rules[0].Description;
+const kept = redirectRules(redirects("/a /b")).rules[0].Description;
 
 function fakeBunny({
   storageZone = { Id: 1, Name: "site", Password: "pw", StorageHostname: "storage.bunnycdn.com" },
@@ -163,10 +174,9 @@ async function outputDir() {
 
 test("deploy uploads changed files, deletes stale ones, syncs managed rules and purges", async () => {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), "/a /b\n/c /d");
   const { writes, bodies } = fakeBunny();
 
-  await deploy("key", config(dir));
+  await deploy("key", config(dir, "/a /b\n/c /d"));
 
   expect(writes).toEqual([
     "PUT https://storage.bunnycdn.com/site/404.html",
@@ -189,14 +199,35 @@ test("deploy uploads changed files, deletes stale ones, syncs managed rules and 
   });
 });
 
-test("deploy fails before any write when a rule file exists but cannot be read", async () => {
+test("deploy neither reads nor uploads _redirects and _headers, and says how to migrate them", async () => {
   const dir = await outputDir();
-  // A directory named _redirects makes readFile fail with EISDIR instead of ENOENT
-  await mkdir(join(dir, "_redirects"));
-  const { writes } = fakeBunny();
+  await writeFile(join(dir, "_redirects"), "/a /b");
+  await writeFile(join(dir, "_headers"), "/*\n  Basic-Auth: user:secret");
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { writes, edgeRuleWrites } = fakeBunny();
 
-  await expect(deploy("key", config(dir))).rejects.toMatchObject({ code: "EISDIR" });
-  expect(writes).toEqual([]);
+  await deploy("key", config(dir));
+
+  expect(writes.filter((w) => /_redirects|_headers/.test(w))).toEqual([]);
+  expect(edgeRuleWrites).toEqual([]);
+  const output = stderr.mock.calls.join("");
+  for (const file of ["_redirects", "_headers"]) {
+    expect(output).toContain(`${file} is not read: rules live in orbitpush.json`);
+  }
+  expect(output).toContain("orbitpush migrate-netlify");
+});
+
+test("deploy leaves out the migrate hint once orbitpush.json has rules", async () => {
+  const dir = await outputDir();
+  await writeFile(join(dir, "_redirects"), "/a /b");
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny();
+
+  await deploy("key", config(dir, "/a /b"));
+
+  const output = stderr.mock.calls.join("");
+  expect(output).toContain("_redirects is not read: rules live in orbitpush.json.");
+  expect(output).not.toContain("migrate-netlify");
 });
 
 test("deploy fails before any write when bunny.net returns an unexpected storage zone", async () => {
@@ -255,7 +286,6 @@ test("deploy starts uploading HTML only after every other upload has finished", 
 
 test("deploy writes a rule listed twice once and deletes a duplicate managed rule", async () => {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), "/a /b\n/c /d\n/c /d");
   const { writes } = fakeBunny({
     edgeRules: [
       { Guid: "keep", Description: kept, OrderIndex: 0 },
@@ -263,7 +293,7 @@ test("deploy writes a rule listed twice once and deletes a duplicate managed rul
     ],
   });
 
-  await deploy("key", config(dir));
+  await deploy("key", config(dir, "/a /b\n/c /d\n/c /d"));
 
   expect(writes.filter((w) => w.includes("/edgerules/"))).toEqual([
     "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
@@ -312,12 +342,11 @@ test("deploy makes browsers revalidate every file while bunny.net keeps caching 
   );
 });
 
-test("deploy serves index.html for unknown paths when _redirects has the SPA rule", async () => {
+test("deploy serves index.html for unknown paths when redirects have the SPA rule", async () => {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), "/a /b\n/* /index.html 200");
   const { bodies, writes } = fakeBunny();
 
-  await deploy("key", config(dir));
+  await deploy("key", config(dir, "/a /b\n/* /index.html 200"));
 
   expect(writes.filter((w) => w.includes("/edgerules/addOrUpdate"))).toHaveLength(1);
   expect(bodies["POST https://api.bunny.net/storagezone/1"]).toMatchObject({
@@ -434,8 +463,7 @@ test("deploy leaves a domain with certificate and Force SSL alone, matching case
 
 test("deploy gives each rule its file position as OrderIndex and rewrites every deployed rule", async () => {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), "/c /d\n/a /b\n/e /f");
-  const [c, a, e] = parseRedirects("/c /d\n/a /b\n/e /f").rules;
+  const [c, a, e] = redirectRules(redirects("/c /d\n/a /b\n/e /f")).rules;
   const { edgeRuleWrites } = fakeBunny({
     edgeRules: [
       { Guid: "a", Description: a.Description, OrderIndex: 0 },
@@ -443,7 +471,7 @@ test("deploy gives each rule its file position as OrderIndex and rewrites every 
     ],
   });
 
-  await deploy("key", config(dir));
+  await deploy("key", config(dir, "/c /d\n/a /b\n/e /f"));
 
   expect(edgeRuleWrites).toEqual([
     { ...c, OrderIndex: 0 },
@@ -454,13 +482,12 @@ test("deploy gives each rule its file position as OrderIndex and rewrites every 
 
 test("deploy restores a managed rule edited in the dashboard when the rule files did not change", async () => {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), "/a /b");
-  const [a] = parseRedirects("/a /b").rules;
+  const [a] = redirectRules(redirects("/a /b")).rules;
   const { edgeRuleWrites } = fakeBunny({
     edgeRules: [{ Guid: "a", Description: a.Description, OrderIndex: 0 }],
   });
 
-  await deploy("key", config(dir));
+  await deploy("key", config(dir, "/a /b"));
 
   expect(edgeRuleWrites).toEqual([{ ...a, Guid: "a", OrderIndex: 0 }]);
 });
@@ -538,11 +565,10 @@ test("deploy adds each alias like a domain, lowercased", async () => {
 
 test("deploy redirects each alias to the main domain and marks the b-cdn.net host noindex, before the file rules", async () => {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), "/a /b");
   const { edgeRuleWrites } = fakeBunny({ edgeRules: [] });
 
   await deploy("key", {
-    ...config(dir),
+    ...config(dir, "/a /b"),
     domain: "www.example.com",
     aliases: ["example.com", "example.net"],
   });
@@ -598,12 +624,11 @@ type Rule = {
   Triggers: { Type: number; PatternMatchingType: number; PatternMatches: string[] }[];
 };
 
-async function slashRules(trailingSlash?: Config["trailingSlash"], redirects = "/a /b") {
+async function slashRules(trailingSlash?: Config["trailingSlash"], lines = "/a /b") {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), redirects);
   const { edgeRuleWrites } = fakeBunny({ edgeRules: [] });
 
-  await deploy("key", { ...config(dir), trailingSlash });
+  await deploy("key", { ...config(dir, lines), trailingSlash });
 
   const rules = edgeRuleWrites as Rule[];
   const slash = rules.filter((r) => r.ActionType === 1 && r.Description.includes("trailing slash"));
@@ -668,36 +693,33 @@ const redirectLines = (count: number, prefix = "r") =>
 
 test("deploy fails before any write when the rules need a full zone, which bunny.net no longer writes to", async () => {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), redirectLines(49));
   const { writes } = fakeBunny({
     edgeRules: [{ Guid: "mine", Description: "created in dashboard", OrderIndex: 0 }],
   });
 
-  await expect(deploy("key", config(dir))).rejects.toThrow(/50 edge rules/);
+  await expect(deploy("key", config(dir, redirectLines(49)))).rejects.toThrow(/50 edge rules/);
   expect(writes).toEqual([]);
 });
 
 test("deploy accepts 49 edge rules, counting the ones from the dashboard", async () => {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), redirectLines(48));
   const { edgeRuleWrites } = fakeBunny({
     edgeRules: [{ Guid: "mine", Description: "created in dashboard", OrderIndex: 0 }],
   });
 
-  await deploy("key", config(dir));
+  await deploy("key", config(dir, redirectLines(48)));
 
   expect(edgeRuleWrites).toHaveLength(48);
 });
 
 test("deploy deletes removed rules first when adding first would fill the zone", async () => {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), `${redirectLines(48)}\n/new /b`);
-  const old = parseRedirects(`${redirectLines(48)}\n/gone /b`).rules;
+  const old = redirectRules(redirects(`${redirectLines(48)}\n/gone /b`)).rules;
   const { writes } = fakeBunny({
     edgeRules: old.map((r, i) => ({ Guid: `g${i}`, Description: r.Description, OrderIndex: i })),
   });
 
-  await deploy("key", config(dir));
+  await deploy("key", config(dir, `${redirectLines(48)}\n/new /b`));
 
   const ruleWrites = writes.filter((w) => w.includes("/edgerules/"));
   expect(ruleWrites[0]).toBe("DELETE https://api.bunny.net/pullzone/2/edgerules/g48");
@@ -706,13 +728,12 @@ test("deploy deletes removed rules first when adding first would fill the zone",
 
 test("deploy frees a zone left full by an earlier version once a line is removed", async () => {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), redirectLines(49));
-  const old = parseRedirects(redirectLines(50)).rules;
+  const old = redirectRules(redirects(redirectLines(50))).rules;
   const { writes } = fakeBunny({
     edgeRules: old.map((r, i) => ({ Guid: `g${i}`, Description: r.Description, OrderIndex: i })),
   });
 
-  await deploy("key", config(dir));
+  await deploy("key", config(dir, redirectLines(49)));
 
   const ruleWrites = writes.filter((w) => w.includes("/edgerules/"));
   expect(ruleWrites[0]).toBe("DELETE https://api.bunny.net/pullzone/2/edgerules/g49");
@@ -720,10 +741,9 @@ test("deploy frees a zone left full by an earlier version once a line is removed
 
 test("deploy adds new rules before deleting old ones while the zone has room", async () => {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), "/a /b\n/new /b");
   const { writes } = fakeBunny();
 
-  await deploy("key", config(dir));
+  await deploy("key", config(dir, "/a /b\n/new /b"));
 
   const ruleWrites = writes.filter((w) => w.includes("/edgerules/"));
   expect(ruleWrites.at(-1)).toMatch(/^DELETE /);
@@ -745,12 +765,11 @@ test("deploy turns the 404 page off when the output directory has no 404.html", 
 
 test("deploy counts the disabled rule toward the edge rule limit", async () => {
   const dir = await outputDir();
-  await writeFile(join(dir, "_redirects"), redirectLines(49));
   const { writes } = fakeBunny({
     edgeRules: [{ Guid: "off", Description: "orbitpush disabled", OrderIndex: 0 }],
   });
 
-  await expect(deploy("key", config(dir))).rejects.toThrow(/50 edge rules/);
+  await expect(deploy("key", config(dir, redirectLines(49)))).rejects.toThrow(/50 edge rules/);
   expect(writes).toEqual([]);
 });
 

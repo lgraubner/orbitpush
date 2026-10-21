@@ -162,7 +162,7 @@ test("a relative redirect target stays on the requested hostname", async () => {
   expect(response.headers.location).toBe(`${domainUrl}/pricing.html`);
 });
 
-test("sets headers from _headers, the last matching block wins", async () => {
+test("sets headers from orbitpush.json, the last matching entry wins", async () => {
   const home = await s.get(`${s.cdnUrl}/`);
   expect(home.headers["x-frame-options"]).toBe("DENY");
   expect(home.headers["x-e2e-block"]).toBe("root");
@@ -179,7 +179,7 @@ test("sets headers from _headers, the last matching block wins", async () => {
   expect(guides.headers["x-e2e-page"]).toBeUndefined();
 });
 
-test("_headers: * inside a segment, Content-Type, Set-Cookie, case-insensitive joins", async () => {
+test("headers: * inside a segment, Content-Type, Set-Cookie, case-insensitive joins", async () => {
   const css = await s.get(`${s.cdnUrl}/assets/styles.css`);
   expect(css.headers["x-e2e-css"]).toBe("yes");
   expect((await s.get(`${s.cdnUrl}/assets/app.js`)).headers["x-e2e-css"]).toBeUndefined();
@@ -196,12 +196,7 @@ test("_headers: * inside a segment, Content-Type, Set-Cookie, case-insensitive j
   expect(Number(pricing.headers["content-length"] ?? pricing.body.length)).toBeGreaterThan(1);
 });
 
-test("_headers and _redirects are not uploaded", async () => {
-  expect(await s.status(`${s.cdnUrl}/_headers/`)).toBe(404);
-  expect(await s.status(`${s.cdnUrl}/_redirects/`)).toBe(404);
-});
-
-test("_headers also apply to 404 and redirect responses", async () => {
+test("headers also apply to 404 and redirect responses", async () => {
   const missing = await s.get(`${s.cdnUrl}/missing.html`);
   expect(missing.status).toBe(404);
   expect(missing.headers["x-frame-options"]).toBe("DENY");

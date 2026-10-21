@@ -1,12 +1,19 @@
 import { expect, test } from "vitest";
 
+import type { Header, Redirect } from "../src/config.ts";
 import {
   domainRules,
-  parseHeaders,
-  parseRedirects,
+  headerRules,
+  redirectRules,
   toPattern,
   trailingSlashRule,
 } from "../src/rules.ts";
+
+type RedirectInput = Omit<Redirect, "status"> & { status?: number };
+
+const redirects = (...entries: RedirectInput[]) =>
+  redirectRules(entries.map((entry) => ({ status: 301, ...entry })));
+const headers = (...entries: Header[]) => headerRules(entries);
 
 test("paths become Lua patterns on the full URL", () => {
   expect(toPattern("/").pattern).toBe("pattern:^https?://[^/]+/?$");
@@ -22,17 +29,16 @@ test("paths become Lua patterns on the full URL", () => {
 });
 
 test("redirects", () => {
-  const { rules, warnings } = parseRedirects(`
-# comment
-/home              /
-/blog/:year/:slug  /news/:year/:slug  302
-/docs/*            https://docs.example.com/:splat  308!
-/api/*             https://api.example.com/:splat  200
-/store id=:id      /blog/:id  301
-/en/*              /en/404.html  404
-/x                 /y  301  Language=de
-/a/:b              /c/:missing
-`);
+  const { rules, warnings } = redirects(
+    { from: "/home", to: "/" },
+    { from: "/blog/:year/:slug", to: "/news/:year/:slug", status: 302 },
+    { from: "/docs/*", to: "https://docs.example.com/:splat", status: 308, force: true },
+    { from: "/api/*", to: "https://api.example.com/:splat", status: 200 },
+    { from: "/store", to: "/blog/:id", query: { id: ":id" } },
+    { from: "/en/*", to: "/en/404.html", status: 404 },
+    { from: "/x", to: "/y", conditions: { Language: ["de"] } },
+    { from: "/a/:b", to: "/c/:missing" },
+  );
   expect(
     rules.map((r) => [r.Triggers[0].PatternMatches[0], r.ActionParameter1, r.ActionParameter2]),
   ).toEqual([
@@ -49,37 +55,33 @@ test("redirects", () => {
   expect(warnings).toHaveLength(6);
 });
 
-test("/* /index.html 200 turns on SPA mode instead of becoming an edge rule", () => {
-  expect(parseRedirects("/old /new\n/*  /index.html  200")).toMatchObject({
+test("/* to /index.html with status 200 turns on SPA mode instead of becoming an edge rule", () => {
+  expect(
+    redirects({ from: "/old", to: "/new" }, { from: "/*", to: "/index.html", status: 200 }),
+  ).toMatchObject({
     spa: true,
     warnings: [],
     rules: [{ ActionParameter1: "https://%{Url.Hostname}/new" }],
   });
-  expect(parseRedirects("/old /new").spa).toBe(false);
+  expect(redirects({ from: "/old", to: "/new" }).spa).toBe(false);
 
-  for (const line of [
-    "/* /index.html 200!",
-    "/* /index.html 200 Country=de",
-    "/app/* /app/index.html 200",
-    "/* /index.html 404",
+  for (const entry of [
+    { from: "/*", to: "/index.html", status: 200, force: true },
+    { from: "/*", to: "/index.html", status: 200, conditions: { Country: ["de"] } },
+    { from: "/app/*", to: "/app/index.html", status: 200 },
+    { from: "/*", to: "/index.html", status: 404 },
   ]) {
-    const { spa, rules, warnings } = parseRedirects(line);
-    expect({ line, spa, rules }).toEqual({ line, spa: false, rules: [] });
+    const { spa, rules, warnings } = redirects(entry);
+    expect({ entry, spa, rules }).toEqual({ entry, spa: false, rules: [] });
     expect(warnings).toHaveLength(1);
   }
 });
 
 test("headers", () => {
-  const { rules, warnings } = parseHeaders(`
-/*
-  X-Frame-Options: DENY
-  Link: </a.css>; rel=preload
-  Link: </b.js>; rel=preload
-
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
-  broken line
-`);
+  const { rules, warnings } = headers(
+    { for: "/*", values: { "X-Frame-Options": "DENY", Link: "</a.css>; rel=preload" } },
+    { for: "/assets/*", values: { "Cache-Control": "public, max-age=31536000, immutable" } },
+  );
   expect(rules).toHaveLength(2);
   expect(
     [rules[0], ...rules[0].ExtraActions].map((a) => [
@@ -89,25 +91,32 @@ test("headers", () => {
     ]),
   ).toEqual([
     [5, "X-Frame-Options", "DENY"],
-    [5, "Link", "</a.css>; rel=preload, </b.js>; rel=preload"],
+    [5, "Link", "</a.css>; rel=preload"],
   ]);
   expect(rules[1].Triggers[0].PatternMatches[0]).toBe("pattern:^https?://[^/]+/assets/.*$");
-  expect(warnings).toHaveLength(1);
+  expect(warnings).toEqual([]);
 });
 
 test("unchanged rules keep their description, changed rules get a new one", () => {
-  const a = parseRedirects("/a /b").rules[0].Description;
-  expect(parseRedirects("/a   /b  301").rules[0].Description.split(" ")[1]).toBe(a.split(" ")[1]);
-  expect(parseRedirects("/a /c").rules[0].Description).not.toBe(a);
+  const a = redirects({ from: "/a", to: "/b" }).rules[0].Description;
+  expect(redirects({ from: "/a", to: "/b", status: 301 }).rules[0].Description).toBe(a);
+  expect(redirects({ from: "/a", to: "/c" }).rules[0].Description).not.toBe(a);
 });
 
 test("rule hashes stay stable across releases, so deployed managed rules are kept", () => {
-  expect(parseRedirects("/a /b").rules[0].Description).toBe("orbitpush 29c4d1d733 /a /b 301");
-  expect(parseHeaders("/*\n  X-A: 1").rules[0].Description).toBe("orbitpush 93842498ac headers /*");
+  expect(redirects({ from: "/a", to: "/b" }).rules[0].Description).toBe(
+    "orbitpush 29c4d1d733 /a /b 301",
+  );
+  expect(headers({ for: "/*", values: { "X-A": "1" } }).rules[0].Description).toBe(
+    "orbitpush 93842498ac headers /*",
+  );
 });
 
 test("a redirect target may carry a query string", () => {
-  const { rules, warnings } = parseRedirects("/a /b?ref=x\n/c https://example.com/?a=b 302");
+  const { rules, warnings } = redirects(
+    { from: "/a", to: "/b?ref=x" },
+    { from: "/c", to: "https://example.com/?a=b", status: 302 },
+  );
   expect(rules.map((r) => r.ActionParameter1)).toEqual([
     "https://%{Url.Hostname}/b?ref=x",
     "https://example.com/?a=b",
@@ -115,17 +124,17 @@ test("a redirect target may carry a query string", () => {
   expect(warnings).toEqual([]);
 });
 
-test("a _headers path without indented headers warns instead of vanishing", () => {
-  const { rules, warnings } = parseHeaders("/*\nX-Frame-Options: DENY\n");
+test("a headers entry without values warns instead of vanishing", () => {
+  const { rules, warnings } = headers({ for: "/*", values: {} });
   expect(rules).toEqual([]);
-  expect(warnings).toHaveLength(2);
+  expect(warnings).toEqual(['headers.0 skipped (no headers in "values"): /*']);
 });
 
-test("Country= conditions add one country trigger that must match together with the path", () => {
-  const { rules, warnings } = parseRedirects(`
-/        /uk  302  Country=gb,IE
-/shop/*  /de/shop/:splat  Country=de  Country=at
-`);
+test("Country conditions add one country trigger that must match together with the path", () => {
+  const { rules, warnings } = redirects(
+    { from: "/", to: "/uk", status: 302, conditions: { Country: ["gb", "IE"] } },
+    { from: "/shop/*", to: "/de/shop/:splat", conditions: { Country: ["de", "at"] } },
+  );
   expect(
     rules.map((r) => [r.TriggerMatchingType, r.Triggers, r.ActionParameter1, r.ActionParameter2]),
   ).toEqual([
@@ -153,33 +162,40 @@ test("Country= conditions add one country trigger that must match together with 
 });
 
 test("a redirect with an unsupported or malformed condition is skipped", () => {
-  const { rules, warnings } = parseRedirects(`
-/a  /b  301  Country=de  Language=en
-/c  /d  301  Country=deu
-/e  /f  301  Cookie=ab
-/g  /h  301  extra
-/i  /j  301  Role=admin
-`);
+  const { rules, warnings } = redirects(
+    { from: "/a", to: "/b", conditions: { Country: ["de"], Language: ["en"] } },
+    { from: "/c", to: "/d", conditions: { Country: ["deu"] } },
+    { from: "/e", to: "/f", conditions: { Cookie: ["ab"] } },
+    { from: "/i", to: "/j", conditions: { Role: ["admin"] } },
+  );
   expect(rules).toEqual([]);
-  expect(warnings).toHaveLength(5);
+  expect(warnings).toHaveLength(4);
+  expect(warnings[1]).toContain('redirects.1 skipped (invalid country "deu", expected two-letter');
 });
 
 test("a relative redirect target keeps the requested host, because bunny.net rejects relative targets", () => {
-  expect(parseRedirects("/a /b").rules[0].ActionParameter1).toBe("https://%{Url.Hostname}/b");
-  expect(parseRedirects("/a https://example.com/b").rules[0].ActionParameter1).toBe(
+  expect(redirects({ from: "/a", to: "/b" }).rules[0].ActionParameter1).toBe(
+    "https://%{Url.Hostname}/b",
+  );
+  expect(redirects({ from: "/a", to: "https://example.com/b" }).rules[0].ActionParameter1).toBe(
     "https://example.com/b",
   );
 });
 
 test("a redirect code bunny.net does not serve is sent as the closest one it does, with a warning", () => {
-  const { rules, warnings } = parseRedirects("/a /b 303\n/c /d 307\n/e /f 308!\n/g /h 302");
+  const { rules, warnings } = redirects(
+    { from: "/a", to: "/b", status: 303 },
+    { from: "/c", to: "/d", status: 307 },
+    { from: "/e", to: "/f", status: 308, force: true },
+    { from: "/g", to: "/h", status: 302 },
+  );
   expect(rules.map((r) => r.ActionParameter2)).toEqual(["302", "302", "301", "302"]);
   expect(warnings).toHaveLength(3);
-  expect(warnings[0]).toMatch(/^_redirects:1 .*303.*302/);
-  expect(warnings[2]).toMatch(/^_redirects:3 .*308.*301/);
+  expect(warnings[0]).toMatch(/^redirects\.0 .*303.*302/);
+  expect(warnings[2]).toMatch(/^redirects\.2 .*308.*301/);
 });
 
-const headerActions = (rule: ReturnType<typeof parseHeaders>["rules"][number]) =>
+const headerActions = (rule: ReturnType<typeof headerRules>["rules"][number]) =>
   [rule, ...rule.ExtraActions].map((a) => [a.ActionParameter1, a.ActionParameter2]);
 
 const matches = (rule: { Triggers: { PatternMatches: string[] }[] }, url: string) =>
@@ -187,35 +203,20 @@ const matches = (rule: { Triggers: { PatternMatches: string[] }[] }, url: string
     new RegExp(p.replace(/^pattern:/, "").replace(/%(.)/g, "\\$1")).test(url),
   );
 
-test("_headers joins a header listed twice regardless of case, keeping the first spelling", () => {
-  const { rules } = parseHeaders(`
-/*
-  Cache-Control: max-age=0
-  cache-control: no-cache
-`);
+test("headers joins a header listed twice regardless of case, keeping the first spelling", () => {
+  const { rules } = headers({
+    for: "/*",
+    values: { "Cache-Control": "max-age=0", "cache-control": "no-cache" },
+  });
 
   expect(headerActions(rules[0])).toEqual([["Cache-Control", "max-age=0, no-cache"]]);
 });
 
-test("_headers skips comments, also indented ones below a path", () => {
-  const { rules, warnings } = parseHeaders(`
-# a path
-/a
-  # headers for that path
-  X-Frame-Options: DENY
-`);
-
-  expect(headerActions(rules[0])).toEqual([["X-Frame-Options", "DENY"]]);
-  expect(warnings).toEqual([]);
-});
-
-test("_headers paths take * anywhere, matching any characters as on Netlify", () => {
-  const { rules, warnings } = parseHeaders(`
-/assets/*.js
-  X-A: js
-/a/*/b
-  X-B: b
-`);
+test("header paths take * anywhere, matching any characters as on Netlify", () => {
+  const { rules, warnings } = headers(
+    { for: "/assets/*.js", values: { "X-A": "js" } },
+    { for: "/a/*/b", values: { "X-B": "b" } },
+  );
 
   expect(warnings).toEqual([]);
   const [js, b] = rules;
@@ -228,32 +229,28 @@ test("_headers paths take * anywhere, matching any characters as on Netlify", ()
   expect(matches(b, "https://site.b-cdn.net/a/b")).toBe(false);
 });
 
-test("_headers skips a segment with both a placeholder and a wildcard, as on Netlify", () => {
-  const { rules, warnings } = parseHeaders(`
-/t/:name*
-  X-A: a
-/t/*:name
-  X-B: b
-`);
+test("headers skips a segment with both a placeholder and a wildcard, as on Netlify", () => {
+  const { rules, warnings } = headers(
+    { for: "/t/:name*", values: { "X-A": "a" } },
+    { for: "/t/*:name", values: { "X-B": "b" } },
+  );
 
   expect(rules).toEqual([]);
   expect(warnings).toHaveLength(2);
 });
 
-test("_headers never sends Basic-Auth, which would publish the password", () => {
-  const { rules, warnings } = parseHeaders(`
-/private/*
-  Basic-Auth: user:secret
-  X-A: a
-`);
+test("headers never sends Basic-Auth, which would publish the password", () => {
+  const { rules, warnings } = headers({
+    for: "/private/*",
+    values: { "Basic-Auth": "user:secret", "X-A": "a" },
+  });
 
   expect(headerActions(rules[0])).toEqual([["X-A", "a"]]);
   expect(JSON.stringify(rules)).not.toContain("secret");
-  expect(warnings).toEqual([expect.stringMatching(/^_headers:3 skipped .*Basic-Auth/)]);
-  expect(warnings[0]).not.toContain("secret");
+  expect(warnings).toEqual(["headers.0.values.Basic-Auth skipped (not supported)"]);
 });
 
-test("_headers skips headers that Netlify ignores or bunny.net reserves, each with a warning", () => {
+test("headers skips headers that Netlify ignores or bunny.net reserves, each with a warning", () => {
   const names = [
     "Accept-Ranges",
     "Age",
@@ -271,9 +268,14 @@ test("_headers skips headers that Netlify ignores or bunny.net reserves, each wi
     "Upgrade",
     "CDN-Cache",
   ];
-  const { rules, warnings } = parseHeaders(
-    `/*\n${names.map((name) => `  ${name}: x`).join("\n")}\n  Set-Cookie: a=1\n  Content-Type: text/plain`,
-  );
+  const { rules, warnings } = headers({
+    for: "/*",
+    values: {
+      ...Object.fromEntries(names.map((name) => [name, "x"])),
+      "Set-Cookie": "a=1",
+      "Content-Type": "text/plain",
+    },
+  });
 
   expect(headerActions(rules[0])).toEqual([
     ["Set-Cookie", "a=1"],
@@ -294,8 +296,13 @@ test("the trailing slash rule redirects only HTML responses, so files without an
   });
 });
 
-test("a Country= redirect with more than 5 countries becomes one rule per 5, because a trigger takes 5", () => {
-  const { rules, warnings } = parseRedirects("/ /eu 302 Country=de,at,ch,fr,it,es,nl");
+test("a Country redirect with more than 5 countries becomes one rule per 5, because a trigger takes 5", () => {
+  const { rules, warnings } = redirects({
+    from: "/",
+    to: "/eu",
+    status: 302,
+    conditions: { Country: ["de", "at", "ch", "fr", "it", "es", "nl"] },
+  });
 
   expect(warnings).toEqual([]);
   expect(rules).toHaveLength(2);

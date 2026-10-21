@@ -35,10 +35,10 @@ If `init` fails before `orbitpush.json` is written, it deletes the zones it just
 
 In a terminal, `deploy` without an `orbitpush.json` asks whether to set up a new site, asks the `init` questions, and deploys right after. The output directory must exist, so build first. Without a terminal it stops with an error instead, so CI never creates a site.
 
-1. Reads `orbitpush.json`, `BUNNY_API_KEY` and the rule files. A missing `_headers` or `_redirects` means no rules of that kind. A rule file that exists but cannot be read stops the deploy before anything changes.
+1. Reads `orbitpush.json` and `BUNNY_API_KEY`.
 2. Compares the output directory with the storage zone using SHA256 checksums and uploads only changed files, HTML files last. A symlinked file is uploaded with the content it points to; a symlinked directory is skipped with a warning.
 3. Applies the settings: [SPA mode](#spa-mode) or the [404 page](#404-page) from the output directory, and replication regions, delivery regions and domains from `orbitpush.json`.
-4. Turns `_headers` and `_redirects` into edge rules (see below).
+4. Turns `redirects` and `headers` into edge rules (see below).
 5. Deletes files from the storage zone that are no longer in the build.
 6. Purges the pull zone cache.
 
@@ -100,6 +100,8 @@ Settings are applied on every deploy, so you can change them later:
 | `region`             | Main storage region. Fixed after `init`.                                                                                                                                                                                                                                                                                                                   |
 | `replicationRegions` | Can only be added. bunny.net does not support removing replication regions.                                                                                                                                                                                                                                                                                |
 | `geoZones`           | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`. At least one.                                                                                                                                                                                                                                                                                        |
+| `redirects`          | Optional. See [Redirects and headers](#redirects-and-headers).                                                                                                                                                                                                                                                                                             |
+| `headers`            | Optional. See [Redirects and headers](#redirects-and-headers).                                                                                                                                                                                                                                                                                             |
 | `trailingSlash`      | Optional. `always`, `never` or `ignore`, see [Trailing slashes](#trailing-slashes).                                                                                                                                                                                                                                                                        |
 
 ### Domains and search engines
@@ -110,6 +112,16 @@ While `domain` is set, responses on `<name>.b-cdn.net` carry `X-Robots-Tag: noin
 
 Both are edge rules that orbitpush manages, like the ones from the rule files below.
 
+## `orbitpush migrate-netlify`
+
+Copies the redirects and headers of a Netlify site into `orbitpush.json`. Run it after `init`, in the directory with `orbitpush.json`:
+
+1. Reads `netlify.toml` from the current directory and `_redirects` and `_headers` from the output directory. If your build copies those files into it, build first.
+2. Writes them to `redirects` and `headers` in `orbitpush.json`: `_redirects` first, then the `[[redirects]]` of `netlify.toml`, the order Netlify applies them in. Headers keep the same order, `_headers` first, so `netlify.toml` wins when both set a header for a URL; Netlify does not document this order.
+3. Warns about every rule that `deploy` will skip because bunny.net can't serve it, such as rewrites or `Language` conditions. These rules are still written, so the file stays a complete copy.
+
+It does not copy `Basic-Auth` headers, which hold passwords, or redirects without `to`. It stops without writing when `orbitpush.json` already has redirects or headers, and it never changes or deletes the Netlify files, so the site keeps working on Netlify. Everything else in `netlify.toml`, such as the build command or functions, is ignored. It rewrites `orbitpush.json` in the format `init` writes, so fields left out before, such as an empty `aliases`, appear with their defaults.
+
 ## `orbitpush disable` and `orbitpush enable`
 
 `disable` adds an edge rule named `orbitpush disabled` that blocks every request to the pull zone, then purges the cache. Visitors get bunny.net's `403` page on every hostname. Files, settings and domains stay as they are, and `deploy` keeps working but leaves the block in place and warns about it. `enable` removes the rule and purges the cache again. Both do nothing when the site is already in that state.
@@ -118,91 +130,125 @@ Both are edge rules that orbitpush manages, like the ones from the rule files be
 
 Deletes the pull zone (with its hostnames and certificates), then the storage zone with every file in it, then `orbitpush.json`. It asks you to type the project name first; `--yes` skips that and is required without a terminal. A zone that is already gone counts as deleted, so if `destroy` stops halfway, run it again. DNS records you created for your domains are not managed by orbitpush; remove them at your DNS provider.
 
-## `_headers` and `_redirects`
+## Redirects and headers
 
-Both files use the [Netlify format](https://docs.netlify.com/manage/routing/redirects/overview/) and are read from the root of the output directory. They are not uploaded. Each redirect and each `_headers` path block becomes one edge rule.
+`redirects` and `headers` in `orbitpush.json` take the shape of `[[redirects]]` and `[[headers]]` in Netlify's [`netlify.toml`](https://docs.netlify.com/build/configure-builds/file-based-configuration/), written as JSON. Each redirect and each headers entry becomes one edge rule.
 
-Rules created by orbitpush have a description that starts with `orbitpush <hash>`. On deploy, new or changed rules are added, rules that no longer exist in the files are deleted, and every other orbitpush rule is rewritten from the files, so edits made to it in the dashboard are undone. Edge rules you create yourself in the dashboard are never touched. To take over an orbitpush rule, remove the `orbitpush` prefix from its description; the next deploy then adds a fresh copy unless you also remove the line from the files.
+`_redirects` and `_headers` files in the root of the output directory are neither read nor uploaded, so a site can keep them for Netlify. `deploy` warns about each one, and until `orbitpush.json` has rules it suggests the command below. Copy their rules to `orbitpush.json` with [`orbitpush migrate-netlify`](#orbitpush-migrate-netlify). After that, a change to a file does not reach orbitpush, and a change to `orbitpush.json` does not reach Netlify.
 
-Unsupported lines print a warning and are skipped. They do not fail the deploy.
+Rules created by orbitpush have a description that starts with `orbitpush <hash>`. On deploy, new or changed rules are added, rules that are no longer in `orbitpush.json` are deleted, and every other orbitpush rule is rewritten from `orbitpush.json`, so edits made to it in the dashboard are undone. Edge rules you create yourself in the dashboard are never touched. To take over an orbitpush rule, remove the `orbitpush` prefix from its description; the next deploy then adds a fresh copy unless you also remove the entry from `orbitpush.json`.
 
-bunny.net allows 50 edge rules per pull zone by default; bunny.net support can raise the limit. Besides one rule per redirect line and per `_headers` block, orbitpush adds one per alias, one for noindex while `domain` is set, one for the [trailing slash](#trailing-slashes) and one while the site is disabled. Rules created in the dashboard count too. bunny.net accepts no change to a full zone, so a deploy can use 49 rules; when it would need more, it fails before uploading anything and says how many rules it needs.
+Unsupported entries print a warning, such as `redirects.3 skipped (...)`, and are skipped. They do not fail the deploy. An entry with a missing field, a field of the wrong type or an unknown key makes `orbitpush.json` invalid.
 
-### `_redirects`
+bunny.net allows 50 edge rules per pull zone by default; bunny.net support can raise the limit. Besides one rule per redirect and per headers entry, orbitpush adds one per alias, one for noindex while `domain` is set, one for the [trailing slash](#trailing-slashes) and one while the site is disabled. Rules created in the dashboard count too. bunny.net accepts no change to a full zone, so a deploy can use 49 rules; when it would need more, it fails before uploading anything and says how many rules it needs.
 
+### `redirects`
+
+```json
+"redirects": [
+  { "from": "/old", "to": "/new" },
+  { "from": "/blog/:year/:id", "to": "/posts/:year/:id", "status": 302 },
+  { "from": "/docs/*", "to": "https://docs.example.com/:splat", "status": 302 },
+  { "from": "/", "to": "/uk", "status": 302, "conditions": { "Country": ["gb", "ie"] } },
+  { "from": "https://example.com/*", "to": "https://www.example.com/:splat", "force": true }
+]
 ```
-# _redirects
-/old            /new
-/blog/:year/:id /posts/:year/:id   302
-/docs/*         https://docs.example.com/:splat   302
-https://example.com/*  https://www.example.com/:splat  301!
-```
+
+| Field        | Notes                                                                       |
+| ------------ | --------------------------------------------------------------------------- |
+| `from`       | Path, or a full URL to match one host                                       |
+| `to`         | Path or URL. A relative target (`/new`) redirects on the requested hostname |
+| `status`     | Optional, default `301`                                                     |
+| `force`      | Optional. Accepted, and every redirect behaves as forced                    |
+| `query`      | Optional. Not supported: the redirect is skipped with a warning             |
+| `conditions` | Optional. Only `Country` is supported                                       |
 
 Compared with Netlify's [redirect options](https://docs.netlify.com/manage/routing/redirects/redirect-options/), section by section:
 
-| Netlify feature                                                    | orbitpush | Notes                                                                                                                                                                      |
-| ------------------------------------------------------------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Status `301` (default) and `302`                                   | ✅        |                                                                                                                                                                            |
-| Status `303`, `307`, `308`                                         | ⚠️        | bunny.net serves only `301` and `302`: `303` and `307` are sent as `302`, `308` as `301`, with a warning                                                                   |
-| Status `404` for a path (`/shop /closed 404`)                      | ❌        | Skipped with a warning                                                                                                                                                     |
-| Status `200` rewrites and proxies                                  | ❌        | A storage zone can't serve another path. Only `/* /index.html 200` works, as [SPA mode](#spa-mode)                                                                         |
-| Custom `404.html`                                                  | ✅        | See [404 page](#404-page)                                                                                                                                                  |
-| 404 pages per path (`/en/* /en/404.html 404`)                      | ❌        | Only the global 404 page                                                                                                                                                   |
-| Force with `!`                                                     | ✅        | Accepted, and every redirect behaves as forced                                                                                                                             |
-| Shadowing: a redirect without `!` only applies if no file exists   | ❌        | Edge rules run before the storage zone is asked                                                                                                                            |
-| Splats: `*` at the end, `:splat` in the target                     | ✅        | `*` in the middle of a path or inside a segment (`/a/*/b`, `/file-*.js`) is skipped, as on Netlify                                                                         |
-| Rule order: the first matching redirect wins                       | ✅        |                                                                                                                                                                            |
-| Placeholders (`:name`)                                             | ✅        | As whole segments only: `/a-:id` is skipped                                                                                                                                |
-| Query parameter matching (`/store id=:id /blog/:id`)               | ❌        | Skipped with a warning                                                                                                                                                     |
-| Query string passed on to the target                               | ⚠️        | Only when the target ends in `:splat` or a placeholder: `/docs/a?x=1` goes to `…/a?x=1`, but `/old?x=1` goes to `/new`                                                     |
-| Trailing slash: a rule matches with and without it                 | ✅        |                                                                                                                                                                            |
-| Pretty URLs: `/about` redirects to `/about/`                       | ✅        | [`trailingSlash`](#trailing-slashes) `always`, the default                                                                                                                 |
-| Pretty URLs: `/about.html` is served at `/about/`                  | ❌        | A storage zone can't serve another path                                                                                                                                    |
-| Domain-level redirects (`https://blog.example.com/* …`)            | ✅        | One rule matches both `http` and `https`                                                                                                                                   |
-| Proxy to another host (`… https://backend.example.com/:splat 200`) | ❌        |                                                                                                                                                                            |
-| `Country=`                                                         | ✅        | Two-letter codes. Several `Country=` conditions on one line match any of their countries. Every 5 countries take one edge rule, because a bunny.net rule matches at most 5 |
-| `Language=`                                                        | ❌        | Skipped with a warning                                                                                                                                                     |
-| `Role=`                                                            | ❌        | Needs Netlify Identity                                                                                                                                                     |
-| `Cookie=`                                                          | ❌        | Skipped with a warning                                                                                                                                                     |
-| Redirects in `netlify.toml`                                        | ❌        | Only `_redirects` is read                                                                                                                                                  |
+| Netlify feature                                                      | orbitpush | Notes                                                                                                                  |
+| -------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Status `301` (default) and `302`                                     | ✅        |                                                                                                                        |
+| Status `303`, `307`, `308`                                           | ⚠️        | bunny.net serves only `301` and `302`: `303` and `307` are sent as `302`, `308` as `301`, with a warning               |
+| Status `404` for a path                                              | ❌        | Skipped with a warning                                                                                                 |
+| Status `200` rewrites and proxies                                    | ❌        | A storage zone can't serve another path. Only `/*` to `/index.html` with `200` works, as [SPA mode](#spa-mode)         |
+| Custom `404.html`                                                    | ✅        | See [404 page](#404-page)                                                                                              |
+| 404 pages per path (`/en/*` to `/en/404.html` with `404`)            | ❌        | Only the global 404 page                                                                                               |
+| `force`                                                              | ✅        | Accepted, and every redirect behaves as forced                                                                         |
+| Shadowing: a redirect without `force` only applies if no file exists | ❌        | Edge rules run before the storage zone is asked                                                                        |
+| Splats: `*` at the end, `:splat` in the target                       | ✅        | `*` in the middle of a path or inside a segment (`/a/*/b`, `/file-*.js`) is skipped, as on Netlify                     |
+| Rule order: the first matching redirect wins                         | ✅        |                                                                                                                        |
+| Placeholders (`:name`)                                               | ✅        | As whole segments only: `/a-:id` is skipped                                                                            |
+| Query parameter matching (`query`)                                   | ❌        | Skipped with a warning                                                                                                 |
+| Query string passed on to the target                                 | ⚠️        | Only when the target ends in `:splat` or a placeholder: `/docs/a?x=1` goes to `…/a?x=1`, but `/old?x=1` goes to `/new` |
+| Trailing slash: a rule matches with and without it                   | ✅        |                                                                                                                        |
+| Pretty URLs: `/about` redirects to `/about/`                         | ✅        | [`trailingSlash`](#trailing-slashes) `always`, the default                                                             |
+| Pretty URLs: `/about.html` is served at `/about/`                    | ❌        | A storage zone can't serve another path                                                                                |
+| Domain-level redirects (`https://blog.example.com/*`)                | ✅        | One rule matches both `http` and `https`                                                                               |
+| Proxy to another host, `headers` and `signed` on a proxy             | ❌        | `headers` and `signed` make `orbitpush.json` invalid                                                                   |
+| `Country` condition                                                  | ✅        | Two-letter codes. Every 5 countries take one edge rule, because a bunny.net rule matches at most 5                     |
+| `Language` condition                                                 | ❌        | Skipped with a warning                                                                                                 |
+| `Role` condition                                                     | ❌        | Needs Netlify Identity                                                                                                 |
+| `Cookie` condition                                                   | ❌        | Skipped with a warning                                                                                                 |
+| A `_redirects` file                                                  | ❌        | Stops the deploy, see above                                                                                            |
 
-A relative target (`/new`) redirects on the hostname that was requested.
+### SPA mode
 
-### `_headers`
+The redirect `{ "from": "/*", "to": "/index.html", "status": 200 }` turns on SPA mode: the storage zone serves `index.html` with status `200` for a missing path without a file extension. It is not an edge rule. With `force` or `conditions` it is skipped with a warning.
 
-```
-# _headers
-/*
-  X-Frame-Options: DENY
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
+### `headers`
+
+```json
+"headers": [
+  { "for": "/*", "values": { "X-Frame-Options": "DENY" } },
+  { "for": "/assets/*", "values": { "Cache-Control": "public, max-age=31536000, immutable" } }
+]
 ```
 
 Compared with Netlify's [custom headers](https://docs.netlify.com/manage/routing/headers/), section by section:
 
 | Netlify feature                                                                                                                                                                                                   | orbitpush | Notes                                                                                                                                                                                                    |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `_headers` in the publish directory                                                                                                                                                                               | ✅        | Read from the root of the output directory and not uploaded                                                                                                                                              |
-| `[[headers]]` in `netlify.toml`                                                                                                                                                                                   | ❌        | Only `_headers` is read                                                                                                                                                                                  |
-| Comments with `#`, also indented below a path                                                                                                                                                                     | ✅        |                                                                                                                                                                                                          |
-| Header names are case-insensitive                                                                                                                                                                                 | ✅        | `Cache-Control` and `cache-control` in one block are joined, sent with the first spelling                                                                                                                |
+| `[[headers]]` with `for` and `values`                                                                                                                                                                             | ✅        | As JSON in `orbitpush.json`                                                                                                                                                                              |
+| A `_headers` file                                                                                                                                                                                                 | ❌        | Stops the deploy, see above                                                                                                                                                                              |
+| Header names are case-insensitive                                                                                                                                                                                 | ✅        | `Cache-Control` and `cache-control` in one entry are joined with `, `, sent with the first spelling                                                                                                      |
 | `/*` for every path                                                                                                                                                                                               | ✅        |                                                                                                                                                                                                          |
 | Wildcards: `*` anywhere in a path, matching any characters                                                                                                                                                        | ✅        | `/assets/*.js` also matches `/assets/lib/app.js`, as on Netlify                                                                                                                                          |
 | Placeholders: `:name` as a whole segment                                                                                                                                                                          | ✅        |                                                                                                                                                                                                          |
 | A wildcard and a placeholder in one segment (`/t/:name*`)                                                                                                                                                         | ❌        | Skipped with a warning; Netlify doesn't support it either                                                                                                                                                |
-| Multi-value headers: the same name listed several times                                                                                                                                                           | ✅        | Joined with `, `, Netlify joins with `,`. Both mean the same in HTTP                                                                                                                                     |
+| Multi-value headers                                                                                                                                                                                               | ✅        | Write the values in one string, separated by `, `                                                                                                                                                        |
 | Most response headers, such as `Content-Type`, `Cache-Control` or `Content-Security-Policy`                                                                                                                       | ✅        |                                                                                                                                                                                                          |
 | `Set-Cookie`                                                                                                                                                                                                      | ✅        | Served as written                                                                                                                                                                                        |
 | Headers Netlify ignores: `Accept-Ranges`, `Age`, `Allow`, `Alt-Svc`, `Connection`, `Content-Encoding`, `Content-Length`, `Content-Range`, `Date`, `Location`, `Server`, `Trailer`, `Transfer-Encoding`, `Upgrade` | ✅        | Skipped with a warning, as are names starting with `CDN-`. bunny.net rejects several of them, which would fail the deploy                                                                                |
 | Headers on proxied URLs and functions                                                                                                                                                                             | –         | orbitpush has no proxies or functions                                                                                                                                                                    |
-| Headers per branch or deploy context                                                                                                                                                                              | –         | orbitpush has no deploy contexts. Copying a different `_headers` into the output directory in the build works the same                                                                                   |
+| Headers per branch or deploy context                                                                                                                                                                              | –         | orbitpush has no deploy contexts                                                                                                                                                                         |
 | Cookies across subdomains only on a custom domain                                                                                                                                                                 | ⚠️        | `b-cdn.net` is not on the [Public Suffix List](https://publicsuffix.org/), so other sites on `b-cdn.net` can set cookies for `<name>.b-cdn.net`. Use a custom domain for anything that relies on cookies |
-| Basic authentication (`Basic-Auth: user:password`)                                                                                                                                                                | ❌        | Skipped with a warning, so the password is never sent as a header                                                                                                                                        |
+| Basic authentication (`Basic-Auth`)                                                                                                                                                                               | ❌        | Skipped with a warning, so the password is never sent as a header                                                                                                                                        |
 
 Not on Netlify's page:
 
-- If several path blocks set the same header for a URL, the last block in the file wins, as on Netlify
+- If several entries set the same header for a URL, the last entry wins, as on Netlify
 - Headers also apply to the 404 page, to redirects and to the `index.html` that [SPA mode](#spa-mode) serves
+
+### Moving from Netlify or Vercel
+
+From Netlify, run [`orbitpush migrate-netlify`](#orbitpush-migrate-netlify). The way back is a copy: each entry in `redirects` and `headers` is one `[[redirects]]` or `[[headers]]` block of `netlify.toml` with the same keys.
+
+`vercel.json` uses the same top-level names with different fields, so its entries need rewriting:
+
+| `vercel.json`                                     | `orbitpush.json`                                                                                                |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `redirects[].source`, `destination`               | `from`, `to`                                                                                                    |
+| `/blog/:path*` to `/news/:path*`                  | `/blog/*` to `/news/:splat`                                                                                     |
+| `/:slug` (one segment)                            | `/:slug`                                                                                                        |
+| Regex in `source`, such as `/(.*)` or `:id(\\d+)` | Not supported; `/(.*)` is `/*`                                                                                  |
+| `permanent` (default `true`, sends `308`)         | `status`, default `301`. `308` is sent as `301`, `307` as `302`                                                 |
+| `statusCode`                                      | `status`                                                                                                        |
+| `has` / `missing`                                 | Not supported, except a country: `"conditions": { "Country": [...] }` instead of `has` on `x-vercel-ip-country` |
+| `headers[].source`, `headers: [{ key, value }]`   | `for`, `values: { key: value }`                                                                                 |
+| `rewrites` to `/index.html` from `/(.*)`          | The [SPA mode](#spa-mode) redirect                                                                              |
+| `trailingSlash: true` / `false` / unset           | `trailingSlash: "always"` / `"never"` / `"ignore"`                                                              |
+| `cleanUrls`                                       | Not supported: a storage zone can't serve `/about.html` at `/about`                                             |
+| `outputDirectory`                                 | `outputDir`                                                                                                     |
 
 ## Trailing slashes
 
@@ -212,20 +258,21 @@ bunny.net serves `guides/index.html` at both `/guides` and `/guides/`. At `/guid
 - `never`: `/guides/` redirects with `301` to `/guides`, except when the URL has a query string.
 - `ignore`: no redirect. This is the default in [SPA mode](#spa-mode), where client routes such as `/projects` have no directory.
 
-The redirect drops the query string, like a redirect with a fixed target in `_redirects`. It is an edge rule that orbitpush manages, and redirects from `_redirects` run first.
+The redirect drops the query string, like a redirect with a fixed target in `redirects`. It is an edge rule that orbitpush manages, and the entries in `redirects` run first.
 
 ## Caching
 
 Browsers get `Cache-Control: public, max-age=0` for every file, so they check for a new version on every visit, as on Netlify, and a deploy shows up right away. bunny.net still caches every file at its edge until the next deploy purges it.
 
-For files whose name changes with their content, such as the fingerprinted assets of most build tools, set a long cache time in `_headers`:
+For files whose name changes with their content, such as the fingerprinted assets of most build tools, set a long cache time in `headers`:
 
-```
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
+```json
+"headers": [
+  { "for": "/assets/*", "values": { "Cache-Control": "public, max-age=31536000, immutable" } }
+]
 ```
 
-A `Cache-Control` from `_headers` also applies to bunny.net's edge: with `max-age=0` or `no-cache`, every request for those files goes to the storage zone.
+A `Cache-Control` from `headers` also applies to bunny.net's edge: with `max-age=0` or `no-cache`, every request for those files goes to the storage zone.
 
 ## 404 page
 

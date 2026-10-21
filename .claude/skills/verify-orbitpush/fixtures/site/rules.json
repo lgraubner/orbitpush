@@ -1,0 +1,13 @@
+{
+  "redirects": [
+    { "from": "/old", "to": "/about.html" },
+    { "from": "/blog/:year/:id", "to": "/posts/:year/:id", "status": 302 },
+    { "from": "/docs/*", "to": "https://docs.example.com/:splat", "status": 308 },
+    { "from": "/app/*", "to": "/app/index.html", "status": 200 },
+    { "from": "/store", "to": "/product/:id", "query": { "id": ":id" } }
+  ],
+  "headers": [
+    { "for": "/*", "values": { "X-Frame-Options": "DENY" } },
+    { "for": "/assets/*", "values": { "Cache-Control": "public, max-age=31536000, immutable" } }
+  ]
+}

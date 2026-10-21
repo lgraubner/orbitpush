@@ -19,7 +19,9 @@ for (const s of Object.values(sites)) {
         const html = await readFile(index, "utf8");
         await writeFile(index, html.replace("</body>", "<p>redeployed</p></body>"));
         await rm(join(pub, "contact.html"));
-        await rm(join(pub, "_headers"));
+        const config = join(s.dir, "orbitpush.json");
+        const json: object = JSON.parse(await readFile(config, "utf8"));
+        await writeFile(config, JSON.stringify({ ...json, headers: [] }));
 
         expect((await s.cli("deploy")).code).toBe(0);
         await untilStatus(s, `${s.cdnUrl}/contact.html`, 404);

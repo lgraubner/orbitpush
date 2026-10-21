@@ -59,6 +59,76 @@
       "enum": ["always", "never", "ignore"],
       "description": "Redirect extensionless paths to their trailing slash form (always), away from it (never), or not at all (ignore). Defaults to always, or ignore in SPA mode."
     },
+    "redirects": {
+      "type": "array",
+      "description": "Redirects in the shape of [[redirects]] in netlify.toml. Each becomes an edge rule; the first match wins. {\"from\": \"/*\", \"to\": \"/index.html\", \"status\": 200} turns on SPA mode instead.",
+      "items": {
+        "type": "object",
+        "required": ["from", "to"],
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Path to match, such as /blog/:slug or /docs/*, or a full URL to match one host."
+          },
+          "to": {
+            "type": "string",
+            "description": "Target path or URL. :name and :splat insert what the placeholder and * matched."
+          },
+          "status": {
+            "type": "integer",
+            "default": 301,
+            "description": "301 or 302. 303 and 307 are sent as 302, 308 as 301. Only 200 for SPA mode."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Accepted for Netlify compatibility. Every redirect behaves as forced."
+          },
+          "query": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "Not supported: the redirect is skipped with a warning."
+          },
+          "conditions": {
+            "type": "object",
+            "description": "Only Country is supported. Other conditions skip the redirect with a warning.",
+            "properties": {
+              "Country": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "pattern": "^[A-Za-z]{2}$" },
+                "description": "Two-letter country codes, such as [\"de\", \"at\"]."
+              }
+            },
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "headers": {
+      "type": "array",
+      "description": "Response headers in the shape of [[headers]] in netlify.toml. Each entry becomes an edge rule; when several match, the last one wins.",
+      "items": {
+        "type": "object",
+        "required": ["for", "values"],
+        "additionalProperties": false,
+        "properties": {
+          "for": {
+            "type": "string",
+            "description": "Path to match. * matches any characters, also inside a segment, such as /assets/*.css."
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "Header names and values. Basic-Auth, CDN-* and headers bunny.net sets itself are skipped with a warning."
+          }
+        }
+      }
+    },
     "storageZoneId": {
       "type": "integer"
     },

@@ -181,6 +181,8 @@ export async function init(
       region,
       replicationRegions,
       geoZones,
+      redirects: [],
+      headers: [],
       storageZoneId: storageZone.Id,
       pullZoneId: pullZone.Id,
     };

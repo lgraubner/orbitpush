@@ -21,6 +21,23 @@ export type GeoZone = z.infer<typeof GeoZone>;
 
 export const Hostname = z.string().check(z.hostname());
 
+// The shapes of [[redirects]] and [[headers]] in netlify.toml, so entries copy over as JSON
+const Redirect = z.strictObject({
+  from: z.string(),
+  to: z.string(),
+  status: z._default(z.int(), 301),
+  force: z.optional(z.boolean()),
+  query: z.optional(z.record(z.string(), z.string())),
+  conditions: z.optional(z.record(z.string(), z.array(z.string()).check(z.minLength(1)))),
+});
+export type Redirect = z.infer<typeof Redirect>;
+
+const Header = z.strictObject({
+  for: z.string(),
+  values: z.record(z.string(), z.string()),
+});
+export type Header = z.infer<typeof Header>;
+
 const ConfigSchema = z
   .object({
     name: z.string(),
@@ -31,6 +48,8 @@ const ConfigSchema = z
     replicationRegions: z.array(Region),
     geoZones: z.array(GeoZone).check(z.minLength(1)),
     trailingSlash: z.optional(z.enum(TRAILING_SLASH)),
+    redirects: z._default(z.array(Redirect), []),
+    headers: z._default(z.array(Header), []),
     storageZoneId: z.int(),
     pullZoneId: z.int(),
   })
@@ -69,6 +88,10 @@ export async function readConfig(): Promise<Config> {
     throw new Error(`Invalid ${CONFIG_FILE}: ${errorMessage(error)}`);
   }
 
+  return parseConfig(json);
+}
+
+function parseConfig(json: unknown) {
   const result = ConfigSchema.safeParse(json);
   if (!result.success) {
     throw new Error(`Invalid ${CONFIG_FILE}:\n  ${issues(result.error).join("\n  ")}`);
@@ -77,8 +100,9 @@ export async function readConfig(): Promise<Config> {
   return result.data;
 }
 
-export async function writeConfig(config: Config) {
-  await writeFile(CONFIG_FILE, `${JSON.stringify({ $schema: SCHEMA_URL, ...config }, null, 2)}\n`, {
-    flag: "wx",
+export async function writeConfig(config: Config, { overwrite = false } = {}) {
+  const json = { $schema: SCHEMA_URL, ...parseConfig(config) };
+  await writeFile(CONFIG_FILE, `${JSON.stringify(json, null, 2)}\n`, {
+    flag: overwrite ? "w" : "wx",
   });
 }

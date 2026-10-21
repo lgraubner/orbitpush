@@ -9,13 +9,13 @@ for (const s of Object.values(sites)) {
     const deploy = await s.cli("deploy");
     expect(deploy.code).toBe(0);
     if (s === sites.multiPage) {
-      expect(deploy.stderr).toContain("_redirects:4 status 308 is sent as 301");
-      expect(deploy.stderr).toContain("_redirects:8 skipped");
-      expect(deploy.stderr).toContain("_redirects:11 status 307 is sent as 302");
-      expect(deploy.stderr).toMatch(/_headers:\d+ skipped \(Basic-Auth/);
+      expect(deploy.stderr).toContain("redirects.3 status 308 is sent as 301");
+      expect(deploy.stderr).toContain("redirects.7 skipped");
+      expect(deploy.stderr).toContain("redirects.10 status 307 is sent as 302");
+      expect(deploy.stderr).toContain("headers.6.values.Basic-Auth skipped");
       expect(deploy.stderr).not.toContain("e2e-secret");
-      expect(deploy.stderr).toContain("skipped (Content-Length is set by bunny.net)");
-      expect(deploy.stderr).toContain("skipped (Server is set by bunny.net)");
+      expect(deploy.stderr).toContain("headers.6.values.Content-Length skipped (not supported)");
+      expect(deploy.stderr).toContain("headers.6.values.Server skipped (not supported)");
     }
 
     // Edge rules go live one by one, so wait for the trailing slash rule, which is written last

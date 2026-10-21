@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import type { Header, Redirect } from "./config.ts";
 import { errorMessage } from "./log.ts";
 
 // Bunny edge rule enums: https://docs.bunny.net/api-reference/core/pull-zone/addupdate-edge-rule
@@ -11,7 +12,7 @@ const RESPONSE_HEADER = 2;
 const QUERY_STRING = 6;
 const MATCH_NONE = 2;
 const MATCH_ALL = 1;
-const COUNTRY_CONDITION = /^Country=([a-z]{2}(?:,[a-z]{2})*)$/i;
+const COUNTRY_CODE_PATTERN = /^[a-z]{2}$/i;
 // bunny.net's default limits: 50 edge rules per pull zone and 5 patterns per trigger
 export const MAX_EDGE_RULES = 50;
 const MAX_PATTERNS = 5;
@@ -70,7 +71,7 @@ export function toPattern(from: string, { wildcards = false } = {}) {
       throw new Error(`a placeholder and "*" can't share a segment in "${from}"`);
     }
 
-    // Netlify's _headers paths take * anywhere, matching any characters
+    // Netlify's header paths take * anywhere, matching any characters
     if (wildcards && segment.includes("*")) {
       return segment.split("*").map(escapeLua).join(".*");
     }
@@ -236,42 +237,32 @@ export function disabledRule(): EdgeRule {
   };
 }
 
-export function parseRedirects(text: string): Parsed & { spa: boolean } {
+export function redirectRules(redirects: Redirect[]): Parsed & { spa: boolean } {
   const rules: EdgeRule[] = [];
   const warnings: string[] = [];
   let spa = false;
 
-  lines(text).forEach(([n, line]) => {
-    const skip = (why: string) => warnings.push(`_redirects:${n} skipped (${why}): ${line}`);
-    const tokens = line.split(/\s+/);
-    if (tokens.length < 2) return skip("missing target");
+  redirects.forEach(({ from, to, status, force, query, conditions = {} }, i) => {
+    const skip = (why: string) => warnings.push(`redirects.${i} skipped (${why}): ${from} ${to}`);
+    if (query) return skip("query parameter matching is not supported");
 
-    const [from, to, ...rest] = tokens;
-    if (/^[^/]*=/.test(to)) return skip("query parameter matching is not supported");
-
-    const [statusToken, conditions] = /^\d/.test(rest[0] ?? "")
-      ? [rest[0], rest.slice(1)]
-      : ["301", rest];
-    const unsupported = conditions.find((condition) => !COUNTRY_CONDITION.test(condition));
+    const unsupported = Object.keys(conditions).find((key) => key !== "Country");
     if (unsupported) return skip(`condition "${unsupported}" is not supported`);
 
-    const countries = [
-      ...new Set(
-        conditions.flatMap((condition) =>
-          condition.slice("Country=".length).toUpperCase().split(","),
-        ),
-      ),
-    ];
+    const invalid = conditions.Country?.find((code) => !COUNTRY_CODE_PATTERN.test(code));
+    if (invalid !== undefined) {
+      return skip(`invalid country "${invalid}", expected two-letter codes like ["de", "at"]`);
+    }
 
-    if (from === "/*" && to === "/index.html" && statusToken === "200" && !conditions.length) {
+    const countries = [...new Set(conditions.Country?.map((code) => code.toUpperCase()))];
+
+    if (from === "/*" && to === "/index.html" && status === 200 && !force && !countries.length) {
       spa = true;
       return;
     }
 
-    const status = Number(statusToken.replace(/!$/, ""));
-
     const served = SERVED_STATUS.get(status);
-    if (!served) return skip(`status ${statusToken} is not supported, only redirects`);
+    if (!served) return skip(`status ${status} is not supported, only redirects`);
 
     try {
       const { pattern, params } = toPattern(from);
@@ -283,11 +274,12 @@ export function parseRedirects(text: string): Parsed & { spa: boolean } {
       });
       // bunny.net rejects a relative redirect target as "not a valid URL"
       const absolute = target.startsWith("/") ? `https://%{Url.Hostname}${target}` : target;
+      const condition = conditions.Country ? [`Country=${conditions.Country.join(",")}`] : [];
       const groups = countries.length ? chunk(countries, MAX_PATTERNS) : [[]];
       for (const group of groups) {
         rules.push(
           rule({
-            description: [from, to, served, ...conditions].join(" "),
+            description: [from, to, served, ...condition].join(" "),
             pattern,
             conditions: group.length
               ? [{ Type: COUNTRY_CODE, PatternMatchingType: 0, PatternMatches: group }]
@@ -303,7 +295,7 @@ export function parseRedirects(text: string): Parsed & { spa: boolean } {
         );
       }
       if (served !== status) {
-        warnings.push(`_redirects:${n} status ${status} is sent as ${served}: ${line}`);
+        warnings.push(`redirects.${i} status ${status} is sent as ${served}: ${from} ${to}`);
       }
     } catch (error) {
       skip(errorMessage(error));
@@ -331,74 +323,43 @@ const IGNORED_HEADERS = new Set([
   "upgrade",
 ]);
 
-export function parseHeaders(text: string): Parsed {
+export function headerRules(headers: Header[]): Parsed {
   const rules: EdgeRule[] = [];
   const warnings: string[] = [];
-  const blocks: {
-    n: number;
-    path: string;
-    headers: Map<string, { name: string; values: string[] }>;
-  }[] = [];
 
-  for (const [n, line, indented] of lines(text)) {
-    if (!indented) {
-      blocks.push({ n, path: line, headers: new Map() });
-      continue;
+  headers.forEach(({ for: path, values }, i) => {
+    const merged = new Map<string, { name: string; values: string[] }>();
+    for (const [name, value] of Object.entries(values)) {
+      const key = name.toLowerCase();
+      if (key === "basic-auth" || IGNORED_HEADERS.has(key) || key.startsWith("cdn-")) {
+        warnings.push(`headers.${i}.values.${name} skipped (not supported)`);
+        continue;
+      }
+
+      const header = merged.get(key) ?? { name, values: [] };
+      header.values.push(value.trim());
+      merged.set(key, header);
     }
 
-    const block = blocks.at(-1);
-    const colon = line.indexOf(":");
-    if (!block || colon < 1) {
-      warnings.push(`_headers:${n} skipped (expected "Name: value" below a path): ${line}`);
-      continue;
-    }
-
-    const name = line.slice(0, colon).trim();
-    const key = name.toLowerCase();
-    if (key === "basic-auth") {
-      warnings.push(
-        `_headers:${n} skipped (Basic-Auth is not supported, it would publish the password)`,
-      );
-      continue;
-    }
-
-    if (IGNORED_HEADERS.has(key) || key.startsWith("cdn-")) {
-      warnings.push(`_headers:${n} skipped (${name} is set by bunny.net): ${line}`);
-      continue;
-    }
-
-    const header = block.headers.get(key) ?? { name, values: [] };
-    header.values.push(line.slice(colon + 1).trim());
-    block.headers.set(key, header);
-  }
-
-  for (const { n, path, headers } of blocks) {
-    const actions = [...headers.values()].map(({ name, values }) => ({
+    const actions = [...merged.values()].map(({ name, values }) => ({
       ActionType: SET_RESPONSE_HEADER,
       ActionParameter1: name,
       ActionParameter2: values.join(", "),
     }));
     if (!isNonEmpty(actions)) {
-      warnings.push(`_headers:${n} skipped (no indented "Name: value" lines below it): ${path}`);
-      continue;
+      warnings.push(`headers.${i} skipped (no headers in "values"): ${path}`);
+      return;
     }
 
     try {
       const { pattern } = toPattern(path, { wildcards: true });
       rules.push(rule({ description: `headers ${path}`, pattern, actions }));
     } catch (error) {
-      warnings.push(`_headers:${n} skipped (${errorMessage(error)}): ${path}`);
+      warnings.push(`headers.${i} skipped (${errorMessage(error)}): ${path}`);
     }
-  }
+  });
 
   return { rules, warnings };
-}
-
-function lines(text: string): [number, string, boolean][] {
-  return text
-    .split(/\r?\n/)
-    .map((raw, i): [number, string, boolean] => [i + 1, raw.trim(), /^\s/.test(raw)])
-    .filter(([, line]) => line && !line.startsWith("#"));
 }
 
 function chunk<T>(items: T[], size: number) {

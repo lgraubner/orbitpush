@@ -85,7 +85,7 @@ test("trailingSlash never strips the slash, except with a query string", async (
   expect(await s.status(`${s.cdnUrl}/projects`)).toBe(200);
 });
 
-test("_headers apply to the SPA fallback for a client route", async () => {
+test("headers apply to the SPA fallback for a client route", async () => {
   const response = await s.get(`${s.cdnUrl}/projects`);
 
   expect(response.status).toBe(200);

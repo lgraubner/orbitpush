@@ -16,8 +16,8 @@ import {
   storage,
 } from "./bunny.ts";
 import type { Config } from "./config.ts";
-import { isMissing, readIfExists } from "./files.ts";
-import { log } from "./log.ts";
+import { isMissing } from "./files.ts";
+import { log, style } from "./log.ts";
 import {
   DISABLED_RULE,
   domainRules,
@@ -25,8 +25,8 @@ import {
   type EdgeRule,
   isAliasRule,
   isManaged,
-  parseHeaders,
-  parseRedirects,
+  headerRules,
+  redirectRules,
   trailingSlashRule,
 } from "./rules.ts";
 
@@ -42,13 +42,15 @@ export async function deploy(
     method: "GET",
     path: `/storagezone/${config.storageZoneId}`,
   });
-  const files = await readOutput(config.outputDir);
+  const files = await readOutput(config.outputDir, {
+    migrated: config.redirects.length > 0 || config.headers.length > 0,
+  });
   if (!files.has("index.html")) log.warn(`No index.html in ${config.outputDir}`);
 
-  const { rules: fileRules, spa } = await readRules(config.outputDir);
+  const { rules: configRules, spa } = readRules(config);
   const rules = [
     ...domainRules(config),
-    ...fileRules,
+    ...configRules,
     ...trailingSlashRule(config.trailingSlash ?? (spa ? "ignore" : "always")),
   ];
 
@@ -66,7 +68,7 @@ export async function deploy(
   log.step(`Uploading ${changed.length} of ${files.size} files`);
   const upload = async ([path, file]: (typeof changed)[number]) => {
     await bucket.put({ path, data: await openAsBlob(file.absolute), checksum: file.checksum });
-    log.detail(path);
+    log.detail(`- ${path}`);
   };
   await pool(
     changed.filter(([path]) => !isHtml(path)),
@@ -79,7 +81,7 @@ export async function deploy(
     upload,
   );
 
-  await applySettings(apiKey, {
+  const cdnHost = await applySettings(apiKey, {
     config,
     pullZone,
     spa,
@@ -94,9 +96,11 @@ export async function deploy(
   }
 
   await purgeCache(apiKey, config.pullZoneId);
+
+  return `https://${config.domain ?? cdnHost}`;
 }
 
-async function readOutput(dir: string) {
+async function readOutput(dir: string, { migrated }: { migrated: boolean }) {
   const entries = await readdir(dir, { recursive: true, withFileTypes: true }).catch(
     (error: unknown) => {
       if (isMissing(error))
@@ -114,8 +118,14 @@ async function readOutput(dir: string) {
       continue;
     }
 
+    // Netlify reads these files and never serves them, and _headers can hold passwords
+    if (RULE_FILES.includes(path)) {
+      const hint = migrated ? "" : " Run `orbitpush migrate-netlify` to copy them there.";
+      log.warn(`${path} is not read: rules live in orbitpush.json.${hint}`);
+      continue;
+    }
+
     if (!entry.isFile() && !entry.isSymbolicLink()) continue;
-    if (RULE_FILES.includes(path)) continue;
 
     const checksum = createHash("sha256")
       .update(await readFile(absolute))
@@ -131,9 +141,9 @@ function isHtml(path: string) {
   return path.endsWith(".html");
 }
 
-async function readRules(dir: string) {
-  const redirects = parseRedirects(await readIfExists(join(dir, "_redirects")));
-  const headers = parseHeaders(await readIfExists(join(dir, "_headers")));
+function readRules(config: Config) {
+  const redirects = redirectRules(config.redirects);
+  const headers = headerRules(config.headers);
 
   for (const warning of [...redirects.warnings, ...headers.warnings]) log.warn(warning);
 
@@ -173,7 +183,7 @@ async function applySettings(
       CacheControlPublicMaxAgeOverride: 0,
     },
   });
-  await ensureDomains(apiKey, config, pullZone, { prune: pruneHostnames });
+  return ensureDomains(apiKey, config, pullZone, { prune: pruneHostnames });
 }
 
 function checkRuleLimit(pullZone: PullZone, rules: EdgeRule[]) {
@@ -183,7 +193,7 @@ function checkRuleLimit(pullZone: PullZone, rules: EdgeRule[]) {
   if (managed + unmanaged.length < MAX_EDGE_RULES) return;
 
   throw new Error(
-    `This deploy needs ${managed + unmanaged.length} edge rules (${managed} from orbitpush, ${unmanaged.length} others on the pull zone). bunny.net allows ${MAX_EDGE_RULES} edge rules per pull zone and accepts no change to a full one, so a deploy can use ${MAX_EDGE_RULES - 1}. Remove lines from _redirects or blocks from _headers, or ask bunny.net support to raise the limit.`,
+    `This deploy needs ${managed + unmanaged.length} edge rules (${managed} from orbitpush, ${unmanaged.length} others on the pull zone). bunny.net allows ${MAX_EDGE_RULES} edge rules per pull zone and accepts no change to a full one, so a deploy can use ${MAX_EDGE_RULES - 1}. Remove entries from redirects or headers in orbitpush.json, or ask bunny.net support to raise the limit.`,
   );
 }
 
@@ -213,7 +223,12 @@ async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeRule[]) 
   if (!writes.length && !removed.length) return;
 
   const added = writes.length - kept.size;
-  log.step(`Updating edge rules (+${added} ~${kept.size} -${removed.length})`);
+  const counts = [
+    style("green", `+${added}`),
+    style("yellow", `~${kept.size}`),
+    style("red", `-${removed.length}`),
+  ];
+  log.step(`Updating edge rules (${counts.join(" ")})`);
 
   const remove = async (rules: typeof removed) => {
     for (const rule of rules) {

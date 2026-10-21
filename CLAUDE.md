@@ -18,7 +18,7 @@ One home per kind of code, and the file to copy when adding one:
 - bunny.net HTTP: only through `api()`, `apiJson()` and `storage()` in `src/bunny.ts`. A response that is read goes through `apiJson()` with a schema from the same file.
 - Schemas: `z` from `src/zod.ts`, which loads the English error messages. Never import `zod/mini` directly.
 - Reading a file that may be missing: `isMissing()` and `readIfExists()` in `src/files.ts`. Only ENOENT counts as missing.
-- `_redirects` and `_headers` to edge rules: `src/rules.ts`.
+- `redirects` and `headers` from `orbitpush.json` to edge rules: `src/rules.ts`.
 - Terminal output: `log` from `src/log.ts`, which writes to stderr. Only `--help` and `--version` write to stdout.
 - Runtime packages are dev dependencies: esbuild bundles them, and the published package has none.
 
@@ -26,16 +26,16 @@ One home per kind of code, and the file to copy when adding one:
 
 Untrusted data is parsed where it enters:
 
-| Boundary                 | Parser                                                      |
-| ------------------------ | ----------------------------------------------------------- |
-| `BUNNY_API_KEY`          | `envApiKey()` and `apiKeyFromEnv()` in `src/bunny.ts`       |
-| CLI flags                | `parseArgs()` in `src/args.ts`, then the checks in `init()` |
-| Interactive prompts      | the `validate` options in `src/init.ts`                     |
-| `orbitpush.json`         | `ConfigSchema` in `readConfig()` in `src/config.ts`         |
-| `_redirects`, `_headers` | `parseRedirects()` and `parseHeaders()` in `src/rules.ts`   |
-| bunny.net API responses  | the zod schemas in `src/bunny.ts`, through `apiJson()`      |
+| Boundary                                 | Parser                                                                                                                                         |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BUNNY_API_KEY`                          | `envApiKey()` and `apiKeyFromEnv()` in `src/bunny.ts`                                                                                          |
+| CLI flags                                | `parseArgs()` in `src/args.ts`, then the checks in `init()`                                                                                    |
+| Interactive prompts                      | the `validate` options in `src/init.ts`                                                                                                        |
+| `orbitpush.json`                         | `ConfigSchema` in `readConfig()` in `src/config.ts`, then `redirectRules()` and `headerRules()` in `src/rules.ts` for what bunny.net can serve |
+| `netlify.toml`, `_redirects`, `_headers` | `parseNetlifyToml()`, `parseRedirectsFile()` and `parseHeadersFile()` in `src/migrate-netlify.ts`, only for `migrate-netlify`                  |
+| bunny.net API responses                  | the zod schemas in `src/bunny.ts`, through `apiJson()`                                                                                         |
 
-Public contracts with callers outside the repo stay compatible: the commands, flags, and exit codes (`1` error, `2` unknown command, `130` cancelled prompt); `BUNNY_API_KEY`; the `orbitpush.json` format and `schema.json`, served from unpkg; the supported `_redirects` and `_headers` syntax; and the `orbitpush <hash>` description prefix that marks the edge rules already deployed on users' pull zones.
+Public contracts with callers outside the repo stay compatible: the commands, flags, and exit codes (`1` error, `2` unknown command, `130` cancelled prompt); `BUNNY_API_KEY`; the `orbitpush.json` format, including the Netlify shape of `redirects` and `headers`, and `schema.json`, served from unpkg; and the `orbitpush <hash>` description prefix that marks the edge rules already deployed on users' pull zones.
 
 ## Principles
 

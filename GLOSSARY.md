@@ -13,17 +13,17 @@ The bunny.net CDN in front of the storage zone, reachable at `<name>.b-cdn.net`,
 _Avoid_: CDN zone, site
 
 **Output directory**:
-The build output that `deploy` uploads, set as `outputDir` in `orbitpush.json`. `_headers` and `_redirects` in its root are read, not uploaded.
+The build output that `deploy` uploads, set as `outputDir` in `orbitpush.json`. A `_headers` or `_redirects` file in its root is neither read nor uploaded: rules live in `orbitpush.json`.
 _Avoid_: dist, build folder
 
 **Edge rule**:
-A bunny.net pull zone rule that matches a URL pattern and redirects or sets response headers. Each redirect line and each `_headers` path block becomes one.
+A bunny.net pull zone rule that matches a URL pattern and redirects or sets response headers. Each entry in `redirects` and in `headers` in `orbitpush.json` becomes one.
 
 **Managed rule**:
 An edge rule whose description starts with `orbitpush <hash>`. Only managed rules are written or deleted on deploy; rules created in the dashboard are never touched. The hash covers the rule's content, so a changed rule is a new managed rule. Its `OrderIndex` is its position in the rule files, outside the hash. Every deploy rewrites each managed rule still in the files, which undoes dashboard edits to it and moves it to its current position.
 
 **SPA mode**:
-The storage zone setting that serves `index.html` with status 200 for a missing path without a file extension. The line `/* /index.html 200` in `_redirects` turns it on; it is the only rewrite orbitpush supports, and it is not an edge rule.
+The storage zone setting that serves `index.html` with status 200 for a missing path without a file extension. The redirect `{ "from": "/*", "to": "/index.html", "status": 200 }` in `orbitpush.json` turns it on; it is the only rewrite orbitpush supports, and it is not an edge rule.
 _Avoid_: SPA fallback, `spa` option
 
 **Trailing slash mode**:

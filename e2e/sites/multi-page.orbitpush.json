@@ -1,0 +1,57 @@
+{
+  "redirects": [
+    { "from": "/old", "to": "/pricing.html" },
+    { "from": "/blog/:year/:slug", "to": "/guides/:slug", "status": 302 },
+    { "from": "/handbook/*", "to": "/guides/:splat", "status": 302 },
+    { "from": "/moved", "to": "/contact.html", "status": 308 },
+    { "from": "/geo", "to": "/contact.html", "status": 302, "conditions": { "Country": ["aq"] } },
+    { "from": "/first", "to": "/pricing.html", "status": 302 },
+    { "from": "/first", "to": "/contact.html", "status": 302 },
+    { "from": "/proxy", "to": "/contact.html", "status": 200 },
+    { "from": "https://{{domain}}/domain-only", "to": "/pricing.html", "status": 302 },
+    { "from": "/shadowed.html", "to": "/pricing.html", "status": 301, "force": true },
+    { "from": "/temp", "to": "/contact.html", "status": 307 },
+    {
+      "from": "/geo-here",
+      "to": "/pricing.html",
+      "status": 302,
+      "conditions": { "Country": ["{{country}}"] }
+    },
+    {
+      "from": "/geo-many",
+      "to": "/pricing.html",
+      "status": 302,
+      "conditions": { "Country": ["aq", "ar", "au", "br", "ca", "{{country}}"] }
+    }
+  ],
+  "headers": [
+    {
+      "for": "/*",
+      "values": {
+        "X-Frame-Options": "DENY",
+        "X-E2E-Block": "root",
+        "X-E2E-Multi": "a",
+        "x-e2e-multi": "b"
+      }
+    },
+    { "for": "/assets/*", "values": { "Cache-Control": "public, max-age=31536000, immutable" } },
+    { "for": "/assets/*.css", "values": { "X-E2E-Css": "yes" } },
+    { "for": "/guides/*", "values": { "X-E2E-Block": "guides" } },
+    { "for": "/guides/:page", "values": { "X-E2E-Page": "placeholder" } },
+    {
+      "for": "/.well-known/apple-app-site-association",
+      "values": { "Content-Type": "application/json" }
+    },
+    {
+      "for": "/pricing.html",
+      "values": {
+        "Set-Cookie": "e2e=1; Path=/",
+        "cache-control": "max-age=0",
+        "Cache-Control": "no-cache",
+        "Basic-Auth": "user:e2e-secret",
+        "Content-Length": "1",
+        "Server": "e2e"
+      }
+    }
+  ]
+}

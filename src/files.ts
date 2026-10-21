@@ -8,7 +8,7 @@ export async function readIfExists(path: string) {
   try {
     return await readFile(path, "utf8");
   } catch (error) {
-    if (isMissing(error)) return "";
+    if (isMissing(error)) return undefined;
     throw error;
   }
 }

@@ -11,6 +11,7 @@ import { disable } from "./disable.ts";
 import { enable } from "./enable.ts";
 import { init, setUpForDeploy } from "./init.ts";
 import { errorMessage, log } from "./log.ts";
+import { migrateNetlify } from "./migrate-netlify.ts";
 import { z } from "./zod.ts";
 
 const { version } = z
@@ -20,11 +21,13 @@ const { version } = z
 const help = `Deploy static sites to your own bunny.net account.
 
 Usage:
-  orbitpush init     Create a storage zone + pull zone and write orbitpush.json
-  orbitpush deploy   Upload the build output, sync edge rules and purge the cache
-  orbitpush disable  Block all requests to the site, keeping files and settings
-  orbitpush enable   Serve the site again after disable
-  orbitpush destroy  Delete the pull zone, storage zone and orbitpush.json
+  orbitpush init             Create a storage zone + pull zone and write orbitpush.json
+  orbitpush deploy           Upload the build output, sync edge rules and purge the cache
+  orbitpush disable          Block all requests to the site, keeping files and settings
+  orbitpush enable           Serve the site again after disable
+  orbitpush destroy          Delete the pull zone, storage zone and orbitpush.json
+  orbitpush migrate-netlify  Copy redirects and headers from netlify.toml, _redirects
+                             and _headers into orbitpush.json
 
 Init options (skip the matching prompt):
   --name <name>                 Storage zone and pull zone name
@@ -64,12 +67,16 @@ try {
         ? await setUpForDeploy()
         : { apiKey: apiKeyFromEnv(), config: await readConfig() };
     const started = Date.now();
-    await deploy(site.apiKey, site.config, { pruneHostnames: args.flags["prune-hostnames"] });
-    log.success(`Deployed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    const url = await deploy(site.apiKey, site.config, {
+      pruneHostnames: args.flags["prune-hostnames"],
+    });
+    log.success(`Deployed to ${url} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   } else if (args.command === "disable") {
     await disable(apiKeyFromEnv(), await readConfig());
   } else if (args.command === "enable") {
     await enable(apiKeyFromEnv(), await readConfig());
+  } else if (args.command === "migrate-netlify") {
+    await migrateNetlify();
   } else if (args.command === "destroy") {
     await destroy(apiKeyFromEnv(), await readConfig(), { yes: args.flags.yes, interactive });
   } else {

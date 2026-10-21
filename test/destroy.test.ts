@@ -17,6 +17,8 @@ const config: Config = {
   region: "DE",
   replicationRegions: [],
   geoZones: ["EU"],
+  redirects: [],
+  headers: [],
   storageZoneId: 1,
   pullZoneId: 2,
 };

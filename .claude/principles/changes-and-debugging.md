@@ -26,7 +26,7 @@ When the same correction comes up twice, make the mistake impossible (a type, li
 ## In this repo
 
 - A failed bunny.net call throws `<METHOD> <path> failed: <Message> (HTTP <status>)` from `errorText()` in `src/bunny.ts`. Read that message before guessing.
-- `readRules()` in `src/deploy.ts` treats only a missing rule file as empty. Swallowing every read error once let an unreadable `_redirects` delete every managed redirect. `readConfig()` and the output directory read had the same fault and now also go through `isMissing()` in `src/files.ts`.
+- `readConfig()` and the output directory read treat only ENOENT as missing, through `isMissing()` in `src/files.ts`. Swallowing every read error once let an unreadable `_redirects` delete every managed redirect.
 - `rule()` in `src/rules.ts` hashes the rule body into the description. Changing that body's shape changes every hash, so each user's next deploy deletes and re-adds all managed rules. `test/rules.test.ts` pins two hashes to catch that.
 - To see which requests a command sends, reuse `fakeBunny()` in `test/deploy.test.ts` or `test/init.test.ts`.
 

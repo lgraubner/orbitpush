@@ -18,11 +18,7 @@ export type Response = { status: number; headers: IncomingHttpHeaders; body: str
 
 function site(
   demo: string,
-  {
-    domain = false,
-    ready,
-    config = {},
-  }: { domain?: boolean; ready: { path: string; status: number }; config?: object },
+  { domain = false, ready }: { domain?: boolean; ready: { path: string; status: number } },
 ) {
   const name = `orbitpush-e2e-${demo}-${process.env.E2E_RUN}`;
   const cdnHost = `${name}.b-cdn.net`;
@@ -87,25 +83,20 @@ function site(
 
       await rm(dir, { recursive: true, force: true });
       await cp(join(SITES, demo), join(dir, "public"), { recursive: true });
-      const redirects = join(dir, "public", "_redirects");
-      if (customDomain && existsSync(redirects)) {
-        const text = await readFile(redirects, "utf8");
-        await writeFile(
-          redirects,
-          text
-            .replaceAll("{{domain}}", customDomain)
-            .replaceAll("{{country}}", process.env.E2E_COUNTRY ?? "aq"),
-        );
-      }
-
       const domainFlags = customDomain ? ["--domain", customDomain, "--alias", alias ?? ""] : [];
       const result = await cli("init", "--name", name, "--dir", "public", ...domainFlags, "--yes");
       if (result.code !== 0) return result;
 
+      const extra = join(SITES, `${demo}.orbitpush.json`);
+      if (!existsSync(extra)) return result;
+
+      const text = (await readFile(extra, "utf8"))
+        .replaceAll("{{domain}}", customDomain ?? "")
+        .replaceAll("{{country}}", process.env.E2E_COUNTRY ?? "aq");
       const file = join(dir, "orbitpush.json");
       await writeFile(
         file,
-        JSON.stringify({ ...JSON.parse(await readFile(file, "utf8")), ...config }),
+        JSON.stringify({ ...JSON.parse(await readFile(file, "utf8")), ...JSON.parse(text) }),
       );
       return result;
     },
@@ -121,10 +112,7 @@ export type Site = ReturnType<typeof site>;
 export const sites = {
   singleFile: site("single-file", { ready: { path: "/guides", status: 301 } }),
   multiPage: site("multi-page", { domain: true, ready: { path: "/guides", status: 301 } }),
-  spa: site("spa", {
-    ready: { path: "/projects/alpha/", status: 301 },
-    config: { trailingSlash: "never" },
-  }),
+  spa: site("spa", { ready: { path: "/projects/alpha/", status: 301 } }),
 };
 
 export const untilStatus = (s: Site, url: string, expected: number) =>

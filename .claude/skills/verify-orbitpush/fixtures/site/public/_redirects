@@ -1,7 +1,0 @@
-# Supported
-/old             /about.html
-/blog/:year/:id  /posts/:year/:id   302
-/docs/*          https://docs.example.com/:splat   308
-# Skipped with a warning
-/app/*           /app/index.html   200
-/store id=:id    /product/:id  301
