@@ -109,6 +109,10 @@ test.each([
   ["without a domain to redirect to", { domain: undefined, aliases: ["example.com"] }],
   ["that repeat the domain", { domain: "www.example.com", aliases: ["WWW.example.com"] }],
   [
+    "that repeat each other",
+    { domain: "www.example.com", aliases: ["example.com", "Example.com"] },
+  ],
+  [
     "beyond the 8 that fit into bunny.net's 10 hostnames per pull zone",
     {
       domain: "www.example.com",
@@ -119,6 +123,14 @@ test.each([
   await writeFile("orbitpush.json", JSON.stringify({ ...valid, ...fields }));
 
   await expect(readConfig()).rejects.toThrow(/aliases/);
+});
+
+test("rejects an unknown key, so a misspelled field is not ignored", async () => {
+  await writeFile("orbitpush.json", JSON.stringify({ ...valid, redirect: [] }));
+
+  await expect(readConfig()).rejects.toThrow(
+    /^Invalid orbitpush\.json:\n {2}Unrecognized key: "redirect"$/,
+  );
 });
 
 test.each([

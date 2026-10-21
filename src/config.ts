@@ -38,26 +38,30 @@ const Header = z.strictObject({
 });
 export type Header = z.infer<typeof Header>;
 
-const ConfigSchema = z
-  .object({
-    name: z.string(),
-    outputDir: z.string(),
-    domain: z.optional(Hostname),
-    aliases: z._default(z.array(Hostname), []),
-    region: Region,
-    replicationRegions: z.array(Region),
-    geoZones: z.array(GeoZone).check(z.minLength(1)),
-    trailingSlash: z.optional(z.enum(TRAILING_SLASH)),
-    redirects: z._default(z.array(Redirect), []),
-    headers: z._default(z.array(Header), []),
-    storageZoneId: z.int(),
-    pullZoneId: z.int(),
-  })
-  .check((ctx) => {
-    const problem = aliasProblem(ctx.value);
-    if (problem)
-      ctx.issues.push({ code: "custom", message: problem, path: ["aliases"], input: ctx.value });
-  });
+const ConfigSchema = z.pipe(
+  z
+    .strictObject({
+      $schema: z.optional(z.string()),
+      name: z.string(),
+      outputDir: z.string(),
+      domain: z.optional(Hostname),
+      aliases: z._default(z.array(Hostname), []),
+      region: Region,
+      replicationRegions: z.array(Region),
+      geoZones: z.array(GeoZone).check(z.minLength(1)),
+      trailingSlash: z.optional(z.enum(TRAILING_SLASH)),
+      redirects: z._default(z.array(Redirect), []),
+      headers: z._default(z.array(Header), []),
+      storageZoneId: z.int(),
+      pullZoneId: z.int(),
+    })
+    .check((ctx) => {
+      const problem = aliasProblem(ctx.value);
+      if (problem)
+        ctx.issues.push({ code: "custom", message: problem, path: ["aliases"], input: ctx.value });
+    }),
+  z.transform(({ $schema: _schema, ...config }) => config),
+);
 
 // bunny.net allows 10 hostnames per pull zone by default, <name>.b-cdn.net and the domain included
 const MAX_ALIASES = 8;
@@ -69,8 +73,12 @@ export function aliasProblem({ domain, aliases }: { domain?: string; aliases: st
     return `at most ${MAX_ALIASES} aliases fit into bunny.net's 10 hostnames per pull zone, next to <name>.b-cdn.net and the domain. bunny.net support can raise the limit`;
   }
 
-  const repeated = aliases.find((alias) => alias.toLowerCase() === domain.toLowerCase());
-  return repeated ? `alias ${repeated} is the domain itself` : undefined;
+  const lower = aliases.map((alias) => alias.toLowerCase());
+  const self = aliases.find((_, i) => lower[i] === domain.toLowerCase());
+  if (self) return `alias ${self} is the domain itself`;
+
+  const repeated = aliases.find((_, i) => lower.indexOf(lower[i]) !== i);
+  return repeated ? `alias ${repeated} is listed twice` : undefined;
 }
 
 export type Config = z.infer<typeof ConfigSchema>;

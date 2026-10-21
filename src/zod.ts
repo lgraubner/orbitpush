@@ -7,5 +7,7 @@ z.config(en());
 export { z };
 
 export function issues(error: z.core.$ZodError) {
-  return error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
+  return error.issues.map((issue) =>
+    issue.path.length ? `${issue.path.join(".")}: ${issue.message}` : issue.message,
+  );
 }

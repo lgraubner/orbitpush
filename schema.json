@@ -2,6 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "orbitpush.json",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "name",
     "outputDir",
@@ -34,7 +35,8 @@
         "type": "string",
         "format": "hostname"
       },
-      "description": "Hostnames, added with a free SSL certificate, that 301-redirect to domain. Requires domain and must not repeat it."
+      "uniqueItems": true,
+      "description": "Hostnames, added with a free SSL certificate, that 301-redirect to domain. Requires domain and must not repeat it or each other."
     },
     "region": {
       "enum": ["DE", "UK", "SE", "NY", "LA", "SG", "SYD", "BR", "JH"],
