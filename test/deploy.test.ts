@@ -800,6 +800,19 @@ test("deploy warns about a symlinked directory instead of skipping it silently",
   expect(stderr.mock.calls.join("")).toMatch(/linked/);
 });
 
+test("deploy warns about a broken symlink and deploys the other files", async () => {
+  const dir = await outputDir();
+  await symlink(join(dir, "nowhere"), join(dir, "broken"));
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { writes } = fakeBunny();
+
+  await deploy("key", config(dir));
+
+  expect(stderr.mock.calls.join("")).toMatch(/broken/);
+  expect(writes).toContain("PUT https://storage.bunnycdn.com/site/index.html");
+  expect(writes).not.toContain("PUT https://storage.bunnycdn.com/site/broken");
+});
+
 const zoneHostnames = [
   { Value: "site.b-cdn.net", HasCertificate: true, ForceSSL: false },
   { Value: "www.example.com", HasCertificate: true, ForceSSL: true },
@@ -838,6 +851,7 @@ test.each([
   ["a bunny.net API request", "https://api.bunny.net/storagezone/1", /GET \/storagezone\/1 failed/],
   ["a storage zone listing", "https://storage.bunnycdn.com/site/", /GET \/ failed/],
   ["a stale file deletion", "https://storage.bunnycdn.com/site/gone.html", /DELETE \/gone\.html/],
+  ["a file upload", "https://storage.bunnycdn.com/site/index.html", /PUT \/index\.html failed/],
 ])("deploy fails instead of hanging when %s never answers", async (_, url, message) => {
   const timeout = AbortSignal.timeout.bind(AbortSignal);
   vi.spyOn(AbortSignal, "timeout").mockImplementation(() => timeout(10));

@@ -113,9 +113,20 @@ async function readOutput(dir: string, { migrated }: { migrated: boolean }) {
   for (const entry of entries) {
     const absolute = join(entry.parentPath, entry.name);
     const path = relative(dir, absolute).split(sep).join("/");
-    if (entry.isSymbolicLink() && (await stat(absolute)).isDirectory()) {
-      log.warn(`${path} links to a directory, which deploy does not follow. Copy it instead.`);
-      continue;
+    if (entry.isSymbolicLink()) {
+      const target = await stat(absolute).catch((error: unknown) => {
+        if (isMissing(error)) return undefined;
+        throw error;
+      });
+      if (!target) {
+        log.warn(`${path} links to a file that does not exist, so deploy skips it.`);
+        continue;
+      }
+
+      if (target.isDirectory()) {
+        log.warn(`${path} links to a directory, which deploy does not follow. Copy it instead.`);
+        continue;
+      }
     }
 
     // Netlify reads these files and never serves them, and _headers can hold passwords

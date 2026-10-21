@@ -40,6 +40,7 @@ const Listing = z.array(
 const ErrorBody = z.object({ Message: z.string() });
 
 const REQUEST_TIMEOUT_MS = 120_000;
+const MIN_UPLOAD_BYTES_PER_MS = 100;
 
 export function envApiKey() {
   return process.env.BUNNY_API_KEY?.trim() || undefined;
@@ -220,7 +221,13 @@ export function storage(zone: StorageZone) {
 
   return {
     put: ({ path, data, checksum }: { path: string; data: Blob; checksum: string }) =>
-      request("PUT", path, { body: data, headers: { Checksum: checksum.toUpperCase() } }),
+      request("PUT", path, {
+        body: data,
+        headers: { Checksum: checksum.toUpperCase() },
+        signal: AbortSignal.timeout(
+          REQUEST_TIMEOUT_MS + Math.ceil(data.size / MIN_UPLOAD_BYTES_PER_MS),
+        ),
+      }),
     delete: (path: string) =>
       request("DELETE", path, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }),
     async list() {
