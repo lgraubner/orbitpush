@@ -15,7 +15,8 @@ The command surface every user and CI script relies on: help and version on stdo
 
 ## How to get to it (user POV)
 
-- Run `orbitpush`, `orbitpush --help`, `orbitpush --version`, `orbitpush nope`, or `orbitpush deploy` before init.
+- Run `orbitpush`, `orbitpush --help`, `orbitpush --version`, or `orbitpush nope`.
+- Run `orbitpush deploy` before init without a terminal (CI, scripts). In a terminal it offers to set up a site instead (`features/deploy.md`).
 
 ## Driving it with ctl.sh
 
@@ -23,12 +24,13 @@ Preconditions:
 
 - Fresh run after `launch`, before any init.
 
-- **Help.** Run `$C cli $RUN help -- --help`. Exit `0`, stdout starts with `Deploy static sites to your own bunny.net account.` and lists `init`, `deploy`, `disable`, `enable` and `destroy`, and stderr is empty.
-- **Version.** Run `$C cli $RUN version -- --version`. stdout equals the `version` in `package.json`.
+- **Help.** Run `$C cli $RUN help -- --help`. Exit `0`, stdout starts with `Deploy static sites to your own bunny.net account.` and lists `init`, `deploy`, `disable`, `enable`, `destroy` and `migrate-netlify`, and stderr is empty. `$C cli $RUN help-h -- -h` and `$C cli $RUN help-none --` give the same stdout.
+- **Version.** Run `$C cli $RUN version -- --version` and `$C cli $RUN version-v -- -v`. Both stdouts equal the `version` in `package.json`.
 - **Unknown.** Run `$C cli $RUN unknown -- nope`. Exit `2`, stdout empty, and usage on stderr.
-- **No config.** Run `$C cli $RUN no-config -- deploy`. Exit `1`, stderr `orbitpush.json not found. Run \`orbitpush init\` first.`
+- **No config.** Run `$C cli $RUN no-config -- deploy`. Exit `1`, stderr `orbitpush.json not found. Run \`orbitpush init\` first, or \`orbitpush init --name <name> --dir <dir> --yes\` without a terminal.`
 - **No key.** Run `$C cli $RUN no-key BUNNY_API_KEY= -- deploy`. Exit `1`, and stderr names `BUNNY_API_KEY` and `https://dash.bunny.net/account/api-key`.
-- **Bad flag.** Run `$C cli $RUN bad-flag -- init --name verify-x --region DE --region NY --yes`. Exit `1`, stderr `✖ Invalid arguments: --region: ...`, and no `bunny-state.json` is written.
+- **Bad flag.** Run `$C cli $RUN bad-flag -- init --name verify-x --region DE --region NY --yes`. Exit `1`, stderr `✖ Invalid arguments: --region: ...`. Run `$C cli $RUN bad-opt -- deploy --domian x.com`. Exit `1`, stderr ``✖ Unknown option --domian. Run `orbitpush --help` for the options.``. No `bunny-state.json` is written by either.
+- **Colors.** Run `$C tui $RUN colors TUI_STDERR=file -- deploy --domian x`, which keeps stdout on the terminal and writes stderr to `colors.stderr`. When the screen shows `[orbitpush exited 1]`, `grep -cF "$(printf '\033')" .verify-artifacts/$RUN/colors.stderr` prints `0`. The same command without `TUI_STDERR=file` shows colors in `tmux capture-pane -e`.
 - **Cancel.** Run `$C tui $RUN cancel -- init`, wait for the first prompt, then `$C keys $RUN C-c`. The screen ends with `[orbitpush exited 130]`, and no `bunny-state.json` was written (no request was sent).
 
 ## Gotchas

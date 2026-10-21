@@ -52,7 +52,7 @@ $C screen $RUN <name>                 # pane -> evidence/<name>.screen.txt
 $C keys $RUN C-u verify-a Enter       # tmux send-keys arguments
 ```
 
-The pane ends with `[orbitpush exited <code>]` when the CLI exits. Wait about 0.5 s after each key before taking a screen. The prompts are identified by their text; `features/init.md` lists them.
+The pane ends with `[orbitpush exited <code>]` when the CLI exits. `TUI_STDERR=file` before `--` keeps stdout on the terminal and writes stderr to `<step>.stderr`, for checks that need the two streams apart. Wait about 0.5 s after each key before taking a screen. The prompts are identified by their text; `features/init.md` lists them.
 
 Fake knobs, as `VAR=value` before `--`: `FAKE_BUNNY_CERT=ok` lets SSL certificates succeed (default fails, like DNS that is not pointed yet). `FAKE_BUNNY_FAIL="<METHOD> <path>"` answers that request with HTTP 500 and changes no state, like a failed bunny.net call. The fake gives IDs from 1000: the first storage zone is 1000, the first pull zone 1001. Taken names answer HTTP 400.
 

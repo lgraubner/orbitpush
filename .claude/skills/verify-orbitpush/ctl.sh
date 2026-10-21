@@ -13,7 +13,7 @@ Usage:
   ctl.sh doctor  <run-id>                      Check build, version, isolation and the fake
   ctl.sh cli     <run-id> <step> [env=val...] -- <args...>
                                                Run `orbitpush <args>` non-interactively, record evidence
-  ctl.sh tui     <run-id> <step> [env=val...] -- <args...>
+  ctl.sh tui     <run-id> <step> [env=val...] -- <args...>   (TUI_STDERR=file: stderr to <step>.stderr)
                                                Start `orbitpush <args>` in a tmux session (real TTY)
   ctl.sh keys    <run-id> <tmux send-keys args...>
   ctl.sh screen  <run-id> <name>               Save the tmux pane to <evidence>/<name>.screen.txt
@@ -107,10 +107,18 @@ case "$cmd" in
     tmux kill-session -t "=$SESSION" 2>/dev/null || true
     quoted=""
     envs=""
+    redirect=""
     for arg in ${CLI_ARGS[@]+"${CLI_ARGS[@]}"}; do quoted+="$(printf '%q' "$arg") "; done
-    for arg in ${ENV_ARGS[@]+"${ENV_ARGS[@]}"}; do envs+="$(printf '%q' "$arg") "; done
+    for arg in ${ENV_ARGS[@]+"${ENV_ARGS[@]}"}; do
+      # TUI_STDERR=file keeps stdout on the terminal and sends stderr to <step>.stderr
+      if [[ "$arg" == "TUI_STDERR=file" ]]; then
+        redirect="2>$(printf '%q' "$EVIDENCE/$step.stderr")"
+      else
+        envs+="$(printf '%q' "$arg") "
+      fi
+    done
     tmux new-session -d -s "$SESSION" -x 120 -y 40 -c "$SITE" \
-      "env -u CI BUNNY_API_KEY=fake-key FAKE_BUNNY_STATE=$(printf '%q' "$STATE") $envs node --import $(printf '%q' "$FAKE") $(printf '%q' "$CLI") $quoted; echo \"[orbitpush exited \$?]\"; sleep 3600"
+      "env -u CI BUNNY_API_KEY=fake-key FAKE_BUNNY_STATE=$(printf '%q' "$STATE") $envs node --import $(printf '%q' "$FAKE") $(printf '%q' "$CLI") $quoted $redirect; echo \"[orbitpush exited \$?]\"; sleep 3600"
     echo "tmux session: $SESSION"
     ;;
 

@@ -4,23 +4,25 @@
 
 ## Sub-features
 
-- `migrate-write` writes `redirects` and `headers`, `_redirects` before `netlify.toml`, and keeps every other field.
-- `migrate-warn` warns about lines it can't copy (`_redirects:<line> not migrated`, Basic-Auth) and, as `deploy` will, about rules bunny.net can't serve, which it still writes.
-- `migrate-refuse` stops without writing when `orbitpush.json` already has rules, or when no source file exists.
+- `migrate-write` writes `redirects` and `headers`: `_redirects` before the `[[redirects]]` of `netlify.toml`, `_headers` before its `[[headers]]`. It rewrites `orbitpush.json` in the format `init` writes, so the fields `init` wrote stay the same.
+- `migrate-warn` warns about what it can't copy (`_redirects:<line> not migrated (...)`, `_headers:<line> not migrated (Basic-Auth is not supported)`, `netlify.toml headers.<i>.values.Basic-Auth not migrated`, a `netlify.toml` redirect without `to`), then prints `✔ Wrote N redirects and M headers entries to orbitpush.json` and, under `› Deploy will skip what bunny.net can't serve:`, the warnings `deploy` will print. Those rules are still written. Passwords never reach the file or the output.
+- `migrate-refuse` exits `1` without writing when `orbitpush.json` is missing, already has rules, when no source file exists (`Nothing to migrate: ...`), or when `netlify.toml` is invalid (`Invalid netlify.toml: ...`).
 
 ## How to get to it (user POV)
 
-- After `init`, run `orbitpush migrate-netlify` in a Netlify project. The Netlify files can stay.
+- After `init`, run `orbitpush migrate-netlify` in a Netlify project. The Netlify files can stay: `deploy` skips them with a warning (`features/deploy.md`).
 
 ## Driving it with ctl.sh
 
 Preconditions:
 
-- `init` with `--name verify-m --dir public --yes` exited `0`. Write a `public/_redirects` with `/old /about.html` and `/app/* /app/index.html 200`, and a `netlify.toml` with one `[[redirects]]` (`from = "/a"`, `to = "/b"`, `status = 302`) and one `[[headers]]` with a multi-line `cache-control` and a `Basic-Auth` value.
+- Fresh run after `launch` and `doctor`.
 
-- **Migrate.** Run `$C cli $RUN migrate -- migrate-netlify`. Exit `0`. stderr warns `netlify.toml headers.0.values.Basic-Auth not migrated` and `redirects.1 skipped (status 200 ...)`. `orbitpush.json` has three redirects, `/old`, `/app/*`, `/a` in that order, one headers entry with a one-line `cache-control`, and no password. `bunny-state.json` has no new request.
-- **Again.** Run it again: exit `1`, `already has redirects or headers`, file unchanged.
-- **Deploy.** Run `deploy` with `public/_redirects` still there: exit `0`, stderr warns `_redirects is not read`, no `PUT` for `_redirects`, and `Updating edge rules` adds `/old` and `/a` but not `/app/*`.
+- **No config.** Run `$C cli $RUN noconf -- migrate-netlify`. Exit `1`, `orbitpush.json not found`.
+- **Nothing.** Run `init` with `--name verify-m --dir public --yes`, copy `orbitpush.json` to the evidence dir as `before.json`, then run `$C cli $RUN empty -- migrate-netlify`. Exit `1`, `Nothing to migrate: no netlify.toml here and no _redirects or _headers in public. If your build copies them there, build first.`
+- **Migrate.** Write `public/_redirects` with `/old /about.html`, `/app/* /app/index.html 200` and `/broken`; `public/_headers` with `/*`, `  X-Frame-Options: DENY` and `  Basic-Auth: u:pw1`; and a `netlify.toml` with one `[[redirects]]` (`from = "/a"`, `to = "/b"`, `status = 302`) and one `[[headers]]` (`for = "/*"`, a multi-line `cache-control` of `max-age=0,` and `must-revalidate`, and `Basic-Auth = "u:pw2"`). Run `$C cli $RUN migrate -- migrate-netlify`. Exit `0`, no request in `bunny-state.json`, and stderr in this order: `_redirects:3 not migrated (missing target): /broken`, `_headers:3 not migrated (Basic-Auth is not supported)`, `netlify.toml headers.0.values.Basic-Auth not migrated (not supported)`, `✔ Wrote 3 redirects and 2 headers entries to orbitpush.json`, `› Deploy will skip what bunny.net can't serve:`, `redirects.1 skipped (status 200 is not supported, only redirects): /app/* /app/index.html`. `orbitpush.json` has the redirects `/old` (301), `/app/*` (200), `/a` (302), the headers `{X-Frame-Options: DENY}` and `{cache-control: "max-age=0, must-revalidate"}`, neither password, and every other field equal to `before.json`.
+- **Again.** Run it again: exit `1`, `already has redirects or headers. Empty both to migrate again.`, file byte-identical.
+- **Deploy.** Run `deploy` with the Netlify files still there: exit `0`, `_redirects is not read: rules live in orbitpush.json.` and the same for `_headers`, without the `migrate-netlify` hint, `Updating edge rules (+5 ~0 -0)` (`/old`, `/a`, two headers rules, trailing slash), no rule for `/app/*`, and no `PUT` for `_redirects`, `_headers` or `netlify.toml`.
 
 ## Gotchas
 

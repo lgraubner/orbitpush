@@ -12,7 +12,7 @@ The maintained source for verifying what orbitpush users rely on. Read this inde
 
 - `C=.claude/skills/verify-orbitpush/ctl.sh`, run from the repository root.
 - Prompts are identified by their question text. Answer them through `$C keys`, then confirm the answer on a `$C screen`.
-- Edit only user files to set up a case: `public/**` and `orbitpush.json` in `$TMPDIR/orbitpush-verify/$RUN/site`. Never edit `bunny-state.json`.
+- Edit only user files to set up a case: `public/**`, `orbitpush.json` and `netlify.toml` in `$TMPDIR/orbitpush-verify/$RUN/site`. Never edit `bunny-state.json`.
 - Name projects `verify-<something>`. Live cleanup refuses other names.
 
 ## Proof and skip reporting
