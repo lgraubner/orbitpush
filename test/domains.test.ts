@@ -159,7 +159,9 @@ test("add makes the first hostname the primary domain, lowercased, and connects 
     edgeRules: [STALE, DASHBOARD],
   });
 
-  await domains("key", config, ["add", "WWW.Example.com"], options);
+  const result = await domains("key", config, ["add", "WWW.Example.com"], options);
+
+  expect(result).toBeUndefined();
 
   expect(await readConfig()).toMatchObject({ domain: "www.example.com", aliases: [] });
   expect(writes).toEqual([
@@ -268,6 +270,7 @@ test("add without a terminal prints the DNS record, checks once and fails, keepi
 
   expect(String(error)).toContain("is not connected yet");
   expect(String(error)).toContain("orbitpush domains add example.com");
+  expect(String(error)).toContain("again in a few minutes");
   expect(certificateChecks).toHaveLength(1);
   expect(writes).toEqual([`POST ${API}/pullzone/2/addHostname`]);
   expect(await readConfig()).toMatchObject({ domain: "example.com" });
@@ -434,7 +437,9 @@ test("remove takes an alias off orbitpush.json, the pull zone and its redirect",
     edgeRules: deployedRules(config),
   });
 
-  await domains("key", config, ["remove", "Example.com"], options);
+  const result = await domains("key", config, ["remove", "Example.com"], options);
+
+  expect(result).toBeUndefined();
 
   expect(await readConfig()).toMatchObject({
     domain: "www.example.com",
@@ -506,6 +511,32 @@ test("list shows each domain's state and changes nothing", async () => {
   expect(line("example.org")).toContain("not added yet");
   expect(line("stray.example.com")).toContain("on the pull zone but not in orbitpush.json");
   expect(output()).not.toContain("site.b-cdn.net ");
+});
+
+const waiting = (Value: string): Hostname => ({ Value, HasCertificate: false, ForceSSL: false });
+
+test.each([
+  ["every domain is connected", [connected("www.example.com"), connected("example.com")], true],
+  ["an alias has no certificate", [connected("www.example.com"), waiting("example.com")], false],
+  ["the domain has no certificate", [waiting("www.example.com"), connected("example.com")], false],
+  ["an alias is not on the pull zone", [connected("www.example.com")], false],
+  [
+    "only a hostname outside orbitpush.json is not connected",
+    [connected("www.example.com"), connected("example.com"), waiting("stray.example.com")],
+    true,
+  ],
+])("list returns whether all domains are connected when %s", async (_, hostnames, expected) => {
+  const config = await site({ domain: "www.example.com", aliases: ["example.com"] });
+  fakeBunny({ hostnames });
+
+  expect(await domains("key", config, ["list"], options)).toBe(expected);
+});
+
+test("list without domains returns true", async () => {
+  const config = await site();
+  fakeBunny({ hostnames: [waiting("stray.example.com")] });
+
+  expect(await domains("key", config, ["list"], options)).toBe(true);
 });
 
 test("list without domains suggests adding one", async () => {

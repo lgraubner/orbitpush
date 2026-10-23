@@ -3,25 +3,25 @@
 Deploy a static site or SPA to **your own** [bunny.net](https://bunny.net) account: a storage zone with a pull zone in front. No server, no platform, bring your own key.
 
 ```bash
-export BUNNY_API_KEY=...   # https://dash.bunny.net/account/api-key
-npx orbitpush init         # creates storage zone + pull zone, writes orbitpush.json
+export BUNNY_API_KEY=...                     # https://dash.bunny.net/account/api-key
 npm run build
-npx orbitpush deploy       # uploads, syncs edge rules, purges the cache
+npx orbitpush deploy                         # first run: sets up the site, then deploys
+npx orbitpush domains add www.example.com    # optional: your own domain
 ```
 
 `orbitpush disable`, `orbitpush enable` and `orbitpush destroy` take a site offline, bring it back, or delete it from bunny.net (see below).
 
 ## `orbitpush init`
 
-Asks for the project name, build output directory, a custom domain and its aliases, the main storage region, replication regions and CDN delivery regions. Then it creates:
+Sets up a site without deploying it. In a terminal you rarely need it: the first `deploy` asks the same questions. It asks for the project name, build output directory, the main storage region, replication regions and CDN delivery regions. Then it creates:
 
 1. a storage zone (name = project name),
 2. a pull zone with the storage zone as its origin (available at `https://<name>.b-cdn.net`),
-3. the custom domain and its aliases, and requests a free SSL certificate for each.
+3. with `--domain` and `--alias`, those hostnames on the pull zone, and prints the DNS record for each.
 
-For a custom domain, point a `CNAME` record to `<name>.b-cdn.net`. `init` and `deploy` print the record for each hostname they add to the pull zone. For an apex domain (`example.com`) you need a DNS provider that supports `ALIAS`/CNAME flattening. If DNS is not set up yet, the certificate is requested again on every deploy until it works.
+Domains are not asked for: add them with [`orbitpush domains add`](#orbitpush-domains), which waits for DNS and turns on HTTPS. For a domain given to `init`, run `domains add` for it once its DNS record is set.
 
-Each prompt can be skipped with a flag; an option no command knows stops with an error. Use `--yes` for non-interactive setup:
+Each prompt can be skipped with a flag; an option no command knows stops with an error. Without a terminal, `init` needs `--name` and `--dir`, or `--yes` to take the defaults:
 
 ```bash
 npx orbitpush init --name my-site --dir dist --domain www.example.com --alias example.com --region DE --delivery-region EU --delivery-region US --yes
@@ -44,7 +44,7 @@ In a terminal, `deploy` without an `orbitpush.json` asks whether to set up a new
 
 bunny.net applies edge rule changes one by one, a few seconds after `deploy` finishes (2–6 s in our tests).
 
-A hostname on the pull zone that `orbitpush.json` does not list, such as a removed alias or a former `domain`, keeps serving the site without a redirect, and `deploy` warns about it. `orbitpush deploy --prune-hostnames` removes every such hostname except `<name>.b-cdn.net`, with its certificate, including hostnames added in the dashboard. A former `domain` usually belongs in `aliases` instead, so that its links redirect to the new domain.
+A hostname on the pull zone that `orbitpush.json` does not list, such as a removed alias or a former `domain`, keeps serving the site without a redirect, and `deploy` warns about it. `orbitpush domains remove <host>` removes one; `orbitpush deploy --prune-hostnames` removes every such hostname except `<name>.b-cdn.net`, with its certificate, including hostnames added in the dashboard. A former primary domain usually belongs in `aliases` instead, so that its links redirect to the new one: `orbitpush domains add <host>`.
 
 In CI, set `BUNNY_API_KEY` as a secret:
 
@@ -80,16 +80,18 @@ orbitpush asks nothing when stdin or stderr is not a terminal, or when `CI` is s
 
 ```bash
 export BUNNY_API_KEY=...
-npx orbitpush init --name my-site --dir dist --domain www.example.com --alias example.com \
-  --region DE --replication-region NY --delivery-region EU --delivery-region US --yes
+npx orbitpush init --name my-site --dir dist --region DE --delivery-region EU --delivery-region US --yes
 npm run build
 npx orbitpush deploy
+npx orbitpush domains add www.example.com   # prints the DNS record, exits 1 until it is set
 ```
 
 - Commit `orbitpush.json` after `init`. Without a terminal, `deploy` never creates a site; it stops when the file is missing.
+- `init` stops unless it gets `--name` and `--dir`, or `--yes`, so a guessed name never creates zones.
 - `deploy`, `disable` and `enable` take no input. `destroy` needs `--yes`.
+- `domains add` checks DNS once instead of waiting and exits `1` while the domain is not connected; run it again a few minutes later. `domains list` exits `1` while any domain is not connected, so a script can poll it.
 - Errors go to stderr with exit code `1`, an unknown command exits with `2`, and an unknown option stops with `1`, so a typo never falls back to a default.
-- Some coding agents run commands in a pseudo-terminal, where orbitpush would ask its questions and wait. Set `CI=1` for them, or pass `--yes` to `init`.
+- Some coding agents run commands in a pseudo-terminal, where orbitpush would ask its questions and wait. Set `CI=1` for them: then nothing asks, and `domains add` checks once instead of waiting up to 15 minutes.
 
 ## `orbitpush.json`
 
@@ -115,8 +117,8 @@ Settings are applied on every deploy, so you can change them later. A key not li
 | Field                | Notes                                                                                                                                                                                                                                                                                                                                                                               |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `outputDir`          | Directory that gets deployed.                                                                                                                                                                                                                                                                                                                                                       |
-| `domain`             | Optional. Custom domain, a hostname such as `www.example.com`, added with SSL. Removing it does **not** remove it from bunny.net; `deploy` warns about it. Add it to `aliases` to redirect it, or see `--prune-hostnames` under `orbitpush deploy`.                                                                                                                                 |
-| `aliases`            | Optional. Hostnames added with SSL that 301-redirect every path and query to `domain`. Need a `domain`, and each is listed once. At most 8: bunny.net allows 10 hostnames per pull zone, `<name>.b-cdn.net` and `domain` included. Removing one leaves it on the pull zone, serving the site without a redirect; `deploy` warns about it, and `deploy --prune-hostnames` removes it |
+| `domain`             | Optional. Primary domain, a hostname such as `www.example.com`, added with SSL. Set by `orbitpush domains add`. Removing it here does **not** remove it from bunny.net; `deploy` warns about it. Use `orbitpush domains remove` instead.                                                                                                                                            |
+| `aliases`            | Optional. Hostnames added with SSL that 301-redirect every path and query to `domain`. Need a `domain`, and each is listed once. At most 8: bunny.net allows 10 hostnames per pull zone, `<name>.b-cdn.net` and `domain` included. Removing one leaves it on the pull zone, serving the site without a redirect; `deploy` warns about it, and `orbitpush domains remove` removes it |
 | `region`             | Main storage region. Fixed after `init`.                                                                                                                                                                                                                                                                                                                                            |
 | `replicationRegions` | Can only be added. bunny.net does not support removing replication regions.                                                                                                                                                                                                                                                                                                         |
 | `geoZones`           | CDN delivery regions: `EU`, `US`, `ASIA`, `SA`, `AF`. At least one.                                                                                                                                                                                                                                                                                                                 |
@@ -128,7 +130,7 @@ Settings are applied on every deploy, so you can change them later. A key not li
 
 Each hostname in `aliases` redirects to `domain` with status `301`, keeping the path and query string, so `https://example.com/a?b=1` goes to `https://www.example.com/a?b=1`. An alias needs the same DNS record as a domain. To swap an alias with `domain`, swap them in `orbitpush.json` and deploy: the old alias redirect is deleted before the new one is added, so the two never redirect in a loop. Aliases redirect only once `domain` has an SSL certificate: until then they serve the site themselves, so a swap to a domain whose DNS is not set yet never sends visitors to a hostname without HTTPS.
 
-While `domain` is set, responses on `<name>.b-cdn.net` carry `X-Robots-Tag: noindex`, so search engines index the custom domain instead.
+While `domain` is set, responses on `<name>.b-cdn.net` carry `X-Robots-Tag: noindex`, so search engines index the primary domain instead.
 
 Both are edge rules that orbitpush manages, like the ones from the rule files below.
 
@@ -241,7 +243,7 @@ Compared with Netlify's [custom headers](https://docs.netlify.com/manage/routing
 | Headers Netlify ignores: `Accept-Ranges`, `Age`, `Allow`, `Alt-Svc`, `Connection`, `Content-Encoding`, `Content-Length`, `Content-Range`, `Date`, `Location`, `Server`, `Trailer`, `Transfer-Encoding`, `Upgrade` | ✅        | Skipped with a warning, as are names starting with `CDN-`. bunny.net rejects several of them, which would fail the deploy                                                                                |
 | Headers on proxied URLs and functions                                                                                                                                                                             | –         | orbitpush has no proxies or functions                                                                                                                                                                    |
 | Headers per branch or deploy context                                                                                                                                                                              | –         | orbitpush has no deploy contexts                                                                                                                                                                         |
-| Cookies across subdomains only on a custom domain                                                                                                                                                                 | ⚠️        | `b-cdn.net` is not on the [Public Suffix List](https://publicsuffix.org/), so other sites on `b-cdn.net` can set cookies for `<name>.b-cdn.net`. Use a custom domain for anything that relies on cookies |
+| Cookies across subdomains only on your own domain                                                                                                                                                                 | ⚠️        | `b-cdn.net` is not on the [Public Suffix List](https://publicsuffix.org/), so other sites on `b-cdn.net` can set cookies for `<name>.b-cdn.net`. Use your own domain for anything that relies on cookies |
 | Basic authentication (`Basic-Auth`)                                                                                                                                                                               | ❌        | Skipped with a warning, so the password is never sent as a header                                                                                                                                        |
 
 Not on Netlify's page:

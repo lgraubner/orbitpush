@@ -74,7 +74,7 @@ async function addDomain(apiKey: string, config: Config, host: string, options: 
     const stays = options.primary && host !== primary ? " It stays an alias for now." : "";
     throw new Error(
       connection.status === "dns"
-        ? `${host} is not connected yet: its DNS does not point to ${cdnHost}.${stays} Run \`${retry}\` again once the record is set. If the domain uses a proxy such as Cloudflare's, turn it off for this record.`
+        ? `${host} is not connected yet: its DNS does not point to ${cdnHost}.${stays} Run \`${retry}\` again in a few minutes, once the record is set. If the domain uses a proxy such as Cloudflare's, turn it off for this record.`
         : `${host} has no SSL certificate.${stays} bunny.net: ${connection.reason}`,
     );
   }
@@ -143,26 +143,31 @@ async function listDomains(apiKey: string, config: Config) {
     log.step("No domains yet. Add one with `orbitpush domains add <host>`.");
   }
 
-  const width = Math.max(
-    0,
-    ...[...hosts, ...pullZone.Hostnames.map((h) => h.Value)].map((h) => h.length),
+  const others = pullZone.Hostnames.map((h) => h.Value).filter(
+    (host) => host.toLowerCase() !== cdnHost.toLowerCase() && !hasHost(hosts, host),
   );
+  const width = Math.max(0, ...[...hosts, ...others].map((host) => host.length));
+
+  let connected = true;
   for (const host of hosts) {
     const role = host === config.domain ? "primary domain" : `redirects to ${config.domain}`;
     const hostname = findHostname(pullZone, host);
     if (hostname?.HasCertificate) {
       log.success(`${host.padEnd(width)}  connected, ${role}`);
     } else if (hostname) {
+      connected = false;
       log.warn(`${host.padEnd(width)}  waiting for DNS: ${host} CNAME ${cdnHost}`);
     } else {
+      connected = false;
       log.warn(`${host.padEnd(width)}  not added yet. Run \`orbitpush domains add ${host}\`.`);
     }
   }
 
-  for (const { Value } of pullZone.Hostnames) {
-    if (Value.toLowerCase() === cdnHost.toLowerCase() || hasHost(hosts, Value)) continue;
-    log.warn(`${Value.padEnd(width)}  on the pull zone but not in ${CONFIG_FILE}`);
+  for (const host of others) {
+    log.warn(`${host.padEnd(width)}  on the pull zone but not in ${CONFIG_FILE}`);
   }
+
+  return connected;
 }
 
 async function waitForConnection(

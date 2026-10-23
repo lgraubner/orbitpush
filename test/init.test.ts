@@ -1,10 +1,40 @@
+import { existsSync } from "node:fs";
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { init } from "../src/init.ts";
+
+type Prompt = {
+  message: string;
+  default?: unknown;
+  choices?: (string | { value: unknown; checked?: boolean })[];
+};
+
+const asked: string[] = [];
+const value = (choice: string | { value: unknown }) =>
+  typeof choice === "string" ? choice : choice.value;
+
+// Answers every prompt with its default, so an interactive init runs without a terminal
+vi.mock("@inquirer/prompts", () => {
+  const answer = (fallback: (p: Prompt) => unknown) => async (p: Prompt) => {
+    asked.push(p.message);
+    return p.default ?? fallback(p);
+  };
+
+  return {
+    input: answer(() => "dist"),
+    password: answer(() => "key"),
+    confirm: answer(() => true),
+    select: answer((p) => value(p.choices?.[0] ?? "")),
+    checkbox: answer((p) =>
+      (p.choices ?? []).filter((c) => typeof c !== "string" && c.checked).map(value),
+    ),
+  };
+});
 
 const cwd = process.cwd();
 let dir: string;
@@ -12,6 +42,7 @@ let dir: string;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "orbitpush-init-"));
   process.chdir(dir);
+  asked.length = 0;
   vi.stubEnv("BUNNY_API_KEY", "key");
 });
 
@@ -230,4 +261,105 @@ test.each([
 
   await expect(init({ name: "site", yes: true, ...flags }, false)).rejects.toThrow(message);
   expect(writes).toEqual([]);
+});
+
+test.each([
+  ["without --name and --dir", {}],
+  ["with only --name", { name: "site" }],
+  ["with only --dir", { dir: "dist" }],
+])("init without a terminal %s stops before sending anything to bunny.net", async (_, flags) => {
+  fakeBunny();
+
+  const error = await init(flags, false).catch((e: unknown) => e);
+
+  expect(String(error)).toMatch(
+    new RegExp(
+      `Without a terminal, init needs --name and --dir, or --yes for the defaults \\(name ${basename(dir).toLowerCase()}, dir \\S+\\)`,
+    ),
+  );
+  expect(fetch).not.toHaveBeenCalled();
+  expect(existsSync("orbitpush.json")).toBe(false);
+});
+
+test.each([
+  ["--yes", { yes: true }],
+  ["--name and --dir", { name: "site", dir: "dist" }],
+])("init without a terminal creates both zones with %s", async (_, flags) => {
+  const { writes } = fakeBunny();
+
+  await init(flags, false);
+
+  expect(writes).toEqual([
+    "POST https://api.bunny.net/storagezone",
+    "POST https://api.bunny.net/pullzone",
+  ]);
+});
+
+test("init in a terminal asks no domain or alias question", async () => {
+  const { writes } = fakeBunny();
+  vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+  await init({}, true);
+
+  expect(asked.length).toBeGreaterThan(0);
+  expect(asked.filter((message) => /domain|Aliases/.test(message))).toEqual([]);
+  expect(writes).toEqual([
+    "POST https://api.bunny.net/storagezone",
+    "POST https://api.bunny.net/pullzone",
+  ]);
+});
+
+test("init in a terminal still takes --domain and --alias", async () => {
+  const { writes } = fakeBunny();
+  vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+  await init({ domain: "www.example.com", alias: "example.com" }, true);
+
+  expect(writes.filter((w) => w.endsWith("/addHostname"))).toHaveLength(2);
+});
+
+test.each([
+  [{}, "2. Use your own domain: `npx orbitpush domains add www.example.com`"],
+  [
+    { domain: "www.example.com" },
+    "2. Add the DNS records above, then run `npx orbitpush domains add www.example.com`",
+  ],
+])("init with %o prints the next steps", async (flags, second) => {
+  fakeBunny();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+  await init({ name: "site", dir: "dist", ...flags }, false);
+
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  const next = output.indexOf("Next:");
+  const first = output.indexOf("1. Build your site, then run `npx orbitpush deploy`");
+  expect(next).toBeGreaterThan(-1);
+  expect(first).toBeGreaterThan(next);
+  expect(output.indexOf(second)).toBeGreaterThan(first);
+});
+
+test.each([
+  ["an invalid --domain", { domain: "https://www.example.com" }, /hostname/],
+  ["an --alias without --domain", { alias: "example.com" }, /alias/i],
+])("init without a terminal or --yes rejects %s", async (_, flags, message) => {
+  const { writes } = fakeBunny();
+
+  await expect(init({ name: "site", dir: "dist", ...flags }, false)).rejects.toThrow(message);
+  expect(writes).toEqual([]);
+});
+
+test("init prints the DNS record for each hostname it adds, with the command that finishes it", async () => {
+  fakeBunny();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+  await init({ name: "site", dir: "dist", domain: "www.example.com", alias: "example.com" }, false);
+
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  for (const host of ["www.example.com", "example.com"]) {
+    expect(output).toMatch(
+      new RegExp(
+        `! Add this DNS record, then run \`orbitpush domains add ${host.replaceAll(".", "\\.")}\` to finish:\\s+${host.replaceAll(".", "\\.")} CNAME site\\.b-cdn\\.net`,
+      ),
+    );
+  }
 });

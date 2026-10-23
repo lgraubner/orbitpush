@@ -126,7 +126,7 @@ export async function ensureDomains(
     }
 
     log.warn(
-      `${Value} is on the pull zone but not in ${CONFIG_FILE}, so it serves the site without a redirect. Add it to aliases, or deploy with --prune-hostnames to remove it.`,
+      `${Value} is on the pull zone but not in ${CONFIG_FILE}, so it serves the site without a redirect. Run \`orbitpush domains add ${Value}\` to make it an alias, or \`orbitpush domains remove ${Value}\`.`,
     );
   }
 
@@ -135,7 +135,11 @@ export async function ensureDomains(
     const hostname = pullZone.Hostnames.find((h) => h.Value.toLowerCase() === domain);
     if (!hostname) {
       await addHostname(apiKey, config.pullZoneId, domain);
-      logDnsRecord(domain, cdnHost, "Create this DNS record at your DNS provider:");
+      logDnsRecord(
+        domain,
+        cdnHost,
+        `Add this DNS record, then run \`orbitpush domains add ${domain}\` to finish:`,
+      );
     }
 
     const connection = await connectHostname(apiKey, config.pullZoneId, domain, hostname);
@@ -143,7 +147,7 @@ export async function ensureDomains(
       logDnsRecord(
         domain,
         cdnHost,
-        `DNS for ${domain} does not point to bunny.net yet. Add this record, then deploy again to enable HTTPS:`,
+        `DNS for ${domain} does not point to bunny.net yet. Add this record, then run \`orbitpush domains add ${domain}\`:`,
       );
     } else if (connection.status === "failed" && hostname) {
       log.warn(`No SSL certificate for ${domain} yet. bunny.net: ${connection.reason}`);

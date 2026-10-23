@@ -80,7 +80,9 @@ export async function deploy(
     pruneHostnames,
   });
   if (config.domain && config.aliases.length && !connected) {
-    log.warn(`${config.aliases.join(", ")} will redirect to ${config.domain} once it has HTTPS.`);
+    log.warn(
+      `${config.aliases.join(", ")} will redirect to ${config.domain} once it has HTTPS. Run \`orbitpush domains add ${config.domain}\` to finish it.`,
+    );
   }
   const ruleChanges = await syncRules(
     apiKey,

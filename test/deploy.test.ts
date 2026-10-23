@@ -479,9 +479,12 @@ test("deploy prints the DNS record for each hostname it adds to the pull zone", 
     aliases: ["example.com", "old.example.com"],
   });
 
-  const output = stderr.mock.calls.join("");
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
   expect(output).toMatch(/[^.]example\.com CNAME site\.b-cdn\.net/);
   expect(output).toContain("old.example.com CNAME site.b-cdn.net");
+  expect(output).toContain(
+    "! Add this DNS record, then run `orbitpush domains add old.example.com` to finish:\n  old.example.com CNAME site.b-cdn.net",
+  );
   expect(output).not.toContain("www.example.com CNAME");
 });
 
@@ -551,7 +554,7 @@ test.each([
 
   const output = stripVTControlCharacters(stderr.mock.calls.join(""));
   expect(output).toContain(
-    "! DNS for www.example.com does not point to bunny.net yet. Add this record, then deploy again to enable HTTPS:",
+    "! DNS for www.example.com does not point to bunny.net yet. Add this record, then run `orbitpush domains add www.example.com`:",
   );
   expect(output).toContain("www.example.com CNAME site-cdn.b-cdn.net");
   expect(output).not.toContain("HTTP 400");
@@ -957,6 +960,9 @@ test("deploy warns about a hostname on the pull zone that orbitpush.json no long
   expect(hostnameRemovals).toEqual([]);
   const warnings = stderr.mock.calls.map(String).filter((line) => line.includes("!"));
   expect(warnings.filter((line) => line.includes("old.example.com"))).toHaveLength(1);
+  expect(stripVTControlCharacters(stderr.mock.calls.join(""))).toContain(
+    "Run `orbitpush domains add old.example.com` to make it an alias, or `orbitpush domains remove old.example.com`.",
+  );
   expect(warnings.filter((line) => /b-cdn\.net|www\.example\.com|Example\.com/.test(line))).toEqual(
     [],
   );
@@ -1185,7 +1191,7 @@ test("deploy writes no alias redirect to a swapped-in domain without a certifica
   }
 
   expect(stripVTControlCharacters(stderr.mock.calls.join(""))).toContain(
-    "! www.example.com will redirect to example.com once it has HTTPS.",
+    "! www.example.com will redirect to example.com once it has HTTPS. Run `orbitpush domains add example.com` to finish it.",
   );
 });
 

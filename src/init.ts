@@ -60,11 +60,18 @@ export async function init(
   const ask = async <T>(flag: T | undefined, fallback: T, question: () => Promise<T>) =>
     flag ?? (prompt ? question() : fallback);
 
-  const apiKey = envApiKey() ?? (prompt ? await promptApiKey() : apiKeyFromEnv());
-
   const defaultName = basename(process.cwd())
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, "-");
+  const defaultDir = ["dist", "build", "out", "public"].find((dir) => existsSync(dir)) ?? "dist";
+  if (!interactive && !flags.yes && (!flags.name || !flags.dir)) {
+    throw new Error(
+      `Without a terminal, init needs --name and --dir, or --yes for the defaults (name ${defaultName}, dir ${defaultDir}).`,
+    );
+  }
+
+  const apiKey = envApiKey() ?? (prompt ? await promptApiKey() : apiKeyFromEnv());
+
   const validName = (v: string) => /^[a-z0-9-]+$/i.test(v) || "Only letters, numbers and dashes";
   const name = await ask(flags.name, defaultName, () =>
     input({
@@ -77,7 +84,6 @@ export async function init(
     throw new Error(`Invalid name "${name}": only letters, numbers and dashes`);
   }
 
-  const defaultDir = ["dist", "build", "out", "public"].find((dir) => existsSync(dir)) ?? "dist";
   const outputDir = await ask(flags.dir, defaultDir, () =>
     input({
       message: "Build output directory",
@@ -86,32 +92,11 @@ export async function init(
         !deploying || existsSync(v) || `${v} not found. Build the site, then run deploy again`,
     }),
   );
-  const domain =
-    (
-      await ask(flags.domain, "", () =>
-        input({
-          message: "Custom domain (optional)",
-          validate: (v) => hostnameProblem(v.trim() ? [v.trim()] : []) ?? true,
-        }),
-      )
-    ).trim() || undefined;
+  const domain = flags.domain?.trim() || undefined;
   const domainProblem = hostnameProblem(domain ? [domain] : []);
   if (domainProblem) throw new Error(`Invalid --domain: ${domainProblem}`);
 
-  const aliasFlag = flags.alias === undefined ? undefined : [flags.alias].flat().join(",");
-  const aliases = splitList(
-    await ask(aliasFlag, "", () =>
-      domain
-        ? input({
-            message: `Aliases that redirect to ${domain}, comma separated (optional)`,
-            validate: (v) =>
-              hostnameProblem(splitList(v)) ??
-              aliasProblem({ domain, aliases: splitList(v) }) ??
-              true,
-          })
-        : Promise.resolve(""),
-    ),
-  );
+  const aliases = listFlag(flags.alias) ?? [];
   const problem = hostnameProblem(aliases) ?? aliasProblem({ domain, aliases });
   if (problem) throw new Error(`Invalid --alias: ${problem}`);
 
@@ -197,7 +182,15 @@ export async function init(
   const { url } = await ensureDomains(apiKey, config, await getPullZone(apiKey, config.pullZoneId));
   log.success(`Ready: ${url}`);
   if (!envApiKey()) log.detail("Set BUNNY_API_KEY in your environment before deploying.");
-  if (!deploying) log.detail("Next: build your site, then run `npx orbitpush deploy`");
+  if (!deploying) {
+    log.detail("Next:");
+    log.detail("  1. Build your site, then run `npx orbitpush deploy`");
+    log.detail(
+      domain
+        ? `  2. Add the DNS records above, then run \`npx orbitpush domains add ${domain}\``
+        : "  2. Use your own domain: `npx orbitpush domains add www.example.com`",
+    );
+  }
 
   return { apiKey, config };
 }

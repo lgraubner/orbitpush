@@ -38,7 +38,7 @@ Usage:
 Init options (skip the matching prompt):
   --name <name>                 Storage zone and pull zone name
   --dir <path>                  Build output directory
-  --domain <host>               Custom domain
+  --domain <host>               Primary domain
   --alias <host>                Hostname that redirects to the domain, repeatable
   --region <code>               Main storage region (DE, UK, SE, NY, LA, SG, SYD, BR, JH)
   --replication-region <code>   Extra storage region, repeatable (default: none)
@@ -71,20 +71,22 @@ try {
   } else if (args.command === "init") {
     await init(args.flags, interactive);
   } else if (args.command === "deploy") {
-    const site =
-      interactive && !existsSync(CONFIG_FILE)
-        ? await setUpForDeploy()
-        : { apiKey: apiKeyFromEnv(), config: await readConfig() };
+    const setUp = interactive && !existsSync(CONFIG_FILE);
+    const site = setUp
+      ? await setUpForDeploy()
+      : { apiKey: apiKeyFromEnv(), config: await readConfig() };
     const started = Date.now();
     const url = await deploy(site.apiKey, site.config, {
       pruneHostnames: args.flags["prune-hostnames"],
     });
     log.success(`Deployed to ${url} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    if (setUp) log.detail("Use your own domain: `npx orbitpush domains add www.example.com`");
   } else if (args.command === "domains") {
-    await domains(apiKeyFromEnv(), await readConfig(), args.rest, {
+    const connected = await domains(apiKeyFromEnv(), await readConfig(), args.rest, {
       primary: args.flags.primary,
       interactive,
     });
+    if (connected === false) process.exitCode = 1;
   } else if (args.command === "disable") {
     await disable(apiKeyFromEnv(), await readConfig());
   } else if (args.command === "enable") {

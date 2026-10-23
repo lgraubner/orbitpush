@@ -1,13 +1,15 @@
 # Init
 
-`orbitpush init` asks for the project settings or takes them from flags. It creates a storage zone and a pull zone named after the project, adds the custom domains, and writes `orbitpush.json`. If anything fails before `orbitpush.json` exists, it deletes the zones it created.
+`orbitpush init` asks for the project settings or takes them from flags. It creates a storage zone and a pull zone named after the project, adds the hostnames of `--domain` and `--alias`, and writes `orbitpush.json`. If anything fails before `orbitpush.json` exists, it deletes the zones it created.
 
 ## Sub-features
 
 - `init-prompts` runs the interactive questions with their defaults.
 - `init-flags` uses flags and `--yes` without prompts.
 - `init-config` writes `orbitpush.json` with the IDs of the created zones.
-- `init-domain` adds the custom domain and its aliases, requests SSL, and prints the DNS record to create for each (`! Create this DNS record at your DNS provider:` and `<host> CNAME <name>.b-cdn.net`). init never shows the SSL warning for a hostname it just added. An alias without a domain fails with `Invalid --alias: aliases need a domain to redirect to` before any request, and a domain or alias that is not a hostname (`https://www.example.com`) with `Invalid --domain` or `Invalid --alias` before any request.
+- `init-domain` adds the hostnames of `--domain` and `--alias` (there is no domain prompt), requests SSL, and prints the DNS record to create for each (``! Add this DNS record, then run `orbitpush domains add <host>` to finish:`` and `<host> CNAME <name>.b-cdn.net`). init never shows the SSL warning for a hostname it just added. An alias without a domain fails with `Invalid --alias: aliases need a domain to redirect to` before any request, and a domain or alias that is not a hostname (`https://www.example.com`) with `Invalid --domain` or `Invalid --alias` before any request.
+- `init-no-terminal` without a terminal and without `--yes` needs `--name` and `--dir`; otherwise it exits `1` with `Without a terminal, init needs --name and --dir, or --yes for the defaults (...)` before any request.
+- `init-next` ends with `Next:`, step 1 (build, then `npx orbitpush deploy`) and step 2 (`npx orbitpush domains add www.example.com`, or with `--domain` ``Add the DNS records above, then run `npx orbitpush domains add <domain>` ``).
 - `init-exists` refuses to run when `orbitpush.json` already exists.
 - `init-rollback` deletes the created zones when a later step fails before the config is written.
 
@@ -15,7 +17,7 @@
 
 - Run `orbitpush init` in a terminal and answer the prompts.
 - Run `orbitpush init --name <n> --dir <d> [--domain <host>] [--alias <host>]... [--region <code>] [--replication-region <code>]... [--delivery-region <zone>]... --yes` in CI or a script. Every prompt has a flag, except the API key prompt, which appears only in a terminal without `BUNNY_API_KEY`.
-- Run `orbitpush init` without a TTY or with `CI` set to anything but `false` or `0`: prompts are skipped and defaults are used. Without `BUNNY_API_KEY` it then fails.
+- Run `orbitpush init` without a TTY or with `CI` set to anything but `false` or `0`: prompts are skipped. It then needs `--name` and `--dir`, or `--yes` for the defaults, and `BUNNY_API_KEY`.
 
 ## Driving it with ctl.sh
 
@@ -23,7 +25,8 @@ Preconditions:
 
 - Fresh run after `launch` and `doctor`; no `orbitpush.json` in the work dir.
 
-- **Prompts.** Run `$C tui $RUN init -- init`. The questions appear in this order: `Project name (used for storage zone and pull zone)` (default `site`), `Build output directory` (the first of `dist`, `build`, `out`, `public` that exists, else `dist`; `public` in the fixture), `Custom domain (optional)`, `Aliases that redirect to <domain>, comma separated (optional)` (only after a domain), `Main storage region` (list, `DE` first), `Storage replication regions (cannot be removed later)` (checkbox without the main region: `UK`, `SE`, `NY`, ...), `CDN delivery regions` (checkbox, `EU` and `US` checked). Answer with `$C keys $RUN C-u verify-a Enter`, `Enter`, `www.example.test Enter`, `Enter` (no alias), `Enter`, `Down Down Space Enter` (selects `NY`), `Enter`. Take a `$C screen` after each. The last screen shows `✔ Created orbitpush.json`, `! Create this DNS record at your DNS provider:` with `www.example.test CNAME verify-a.b-cdn.net`, `✔ Ready: https://verify-a.b-cdn.net`, ``Next: build your site, then run `npx orbitpush deploy` ``, and `[orbitpush exited 0]`.
+- **Prompts.** Run `$C tui $RUN init -- init`. The questions appear in this order: `Project name (used for storage zone and pull zone)` (default `site`), `Build output directory` (the first of `dist`, `build`, `out`, `public` that exists, else `dist`; `public` in the fixture), `Main storage region` (list, `DE` first), `Storage replication regions (cannot be removed later)` (checkbox without the main region: `UK`, `SE`, `NY`, ...), `CDN delivery regions` (checkbox, `EU` and `US` checked). Answer with `$C keys $RUN C-u verify-a Enter`, `Enter`, `Enter`, `Down Down Space Enter` (selects `NY`), `Enter`. Take a `$C screen` after each. The last screen shows `✔ Created orbitpush.json`, `✔ Ready: https://verify-a.b-cdn.net`, `Next:` with the build-and-deploy step and `npx orbitpush domains add www.example.com`, and `[orbitpush exited 0]`. No question mentions a domain.
+- **No terminal.** Run `$C cli $RUN init-bare -- init`. Exit `1`, `Without a terminal, init needs --name and --dir`, and no request in `bunny-state.json`.
 - **Flags.** Run `$C cli $RUN init -- init --name verify-b --dir public --domain www.example.test --alias example.test --region NY --yes`. Exit `0`, and no prompt text in stderr.
 - **Config.** Read `$TMPDIR/orbitpush-verify/$RUN/site/orbitpush.json`. It has `$schema`, the answers, `aliases: []` without aliases, empty `redirects` and `headers`, `storageZoneId` and `pullZoneId`. `domain` is left out when none was given. `$C summary $RUN init` shows the same IDs with matching names; the pull zone has `OriginType` `2` and `StorageZoneId` set to the storage zone's ID.
 - **Domain.** The summary lists `www.example.test` among the pull zone `Hostnames` with `HasCertificate: false`. Repeat with `FAKE_BUNNY_CERT=ok` before `--` in a fresh run: the DNS-record hint still shows, and the hostname has `HasCertificate: true` and `ForceSSL: true`, with one `setForceSSL` write per custom hostname.
