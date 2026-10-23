@@ -291,7 +291,8 @@ test("deploy shows one project line instead of the zones when both zones carry t
   const output = stripVTControlCharacters(stderr.mock.calls.join(""));
   const header = output.indexOf(`Deploying ${dir} to https://site.b-cdn.net`);
   expect(header).toBeGreaterThanOrEqual(0);
-  expect(output).toContain("Project  site (DE)\n");
+  expect(output).toContain("Project    site (DE)\n");
+  expect(output).toContain("bunny.net  https://dash.bunny.net/cdn/2\n");
   expect(output).not.toContain("Storage zone");
   expect(output).not.toContain("Pull zone");
   expect(output).not.toContain("Aliases");
@@ -311,8 +312,8 @@ test("deploy pads the aliases to the project label when both zones carry the pro
   });
 
   const output = stripVTControlCharacters(stderr.mock.calls.join(""));
-  expect(output).toContain("Project  site (UK, replicated to DE, NY)\n");
-  expect(output).toContain("Aliases  example.com, old.example.com");
+  expect(output).toContain("Project    site (UK, replicated to DE, NY)\n");
+  expect(output).toContain("Aliases    example.com, old.example.com");
   expect(output).not.toContain("Storage zone");
   expect(output).not.toContain("Pull zone");
 });

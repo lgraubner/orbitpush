@@ -7,6 +7,7 @@ import {
   api,
   apiJson,
   checkRuleLimit,
+  dashboardUrl,
   ensureDomains,
   findHostname,
   geoZoneFlags,
@@ -140,6 +141,7 @@ function logTarget(config: Config, zone: StorageZone, pullZone: PullZone) {
           ["Pull zone", pullZone.Name],
         ];
   if (config.aliases.length) lines.push(["Aliases", config.aliases.join(", ")]);
+  lines.push(["bunny.net", dashboardUrl(config.pullZoneId)]);
 
   const width = Math.max(...lines.map(([label]) => label.length));
   for (const [label, value] of lines) log.detail(`${label.padEnd(width)}  ${value}`);

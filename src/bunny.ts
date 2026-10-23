@@ -5,6 +5,10 @@ import { issues, z } from "./zod.ts";
 
 export const API_KEY_URL = "https://dash.bunny.net/account/api-key";
 
+export function dashboardUrl(pullZoneId: number) {
+  return `https://dash.bunny.net/cdn/${pullZoneId}`;
+}
+
 export const PullZone = z.object({
   Id: z.int(),
   Name: z.string(),
