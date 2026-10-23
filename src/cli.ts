@@ -8,7 +8,7 @@ import { CONFIG_FILE, readConfig } from "./config.ts";
 import { deploy } from "./deploy.ts";
 import { destroy } from "./destroy.ts";
 import { disable } from "./disable.ts";
-import { domains } from "./domains.ts";
+import { Cancelled, domains } from "./domains.ts";
 import { enable } from "./enable.ts";
 import { init, setUpForDeploy } from "./init.ts";
 import { errorMessage, log } from "./log.ts";
@@ -101,6 +101,9 @@ try {
   }
 } catch (error) {
   if (error instanceof Error && error.name === "ExitPromptError") {
+    process.exitCode = 130;
+  } else if (error instanceof Cancelled) {
+    log.warn(error.message);
     process.exitCode = 130;
   } else {
     log.error(errorMessage(error));

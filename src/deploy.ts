@@ -8,8 +8,10 @@ import {
   apiJson,
   checkRuleLimit,
   ensureDomains,
+  findHostname,
   geoZoneFlags,
   getPullZone,
+  isConnected,
   pool,
   purgeCache,
   type PullZone,
@@ -44,9 +46,9 @@ export async function deploy(
   });
   if (!files.has("index.html")) log.warn(`No index.html in ${config.outputDir}`);
 
-  const { rules, spa, warnings } = managedRules(config, { aliasRedirects: true });
+  const { rules: allRules, spa, warnings } = managedRules(config, { aliasRedirects: true });
   for (const warning of warnings) log.warn(warning);
-  checkRuleLimit(pullZone, rules);
+  checkRuleLimit(pullZone, allRules);
 
   log.status("Comparing with storage zone");
   const bucket = storage(zone);
@@ -121,10 +123,9 @@ function count(n: number, noun: string) {
 }
 
 function logTarget(config: Config, zone: StorageZone, pullZone: PullZone) {
-  const domain = pullZone.Hostnames.find(
-    (h) => h.HasCertificate && h.Value.toLowerCase() === config.domain?.toLowerCase(),
-  );
-  const url = `https://${domain?.Value ?? `${pullZone.Name}.b-cdn.net`}`;
+  const url = isConnected(pullZone, config.domain)
+    ? `https://${findHostname(pullZone, config.domain)?.Value}`
+    : `https://${pullZone.Name}.b-cdn.net`;
   const replicas = config.replicationRegions.filter((region) => region !== config.region);
   const regions = replicas.length
     ? `${config.region}, replicated to ${replicas.join(", ")}`

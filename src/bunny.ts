@@ -101,6 +101,14 @@ export async function apiJson<T>(
   return parseResponse(schema, json, `${request.method} ${request.path}`);
 }
 
+export function findHostname(pullZone: PullZone, host: string | undefined) {
+  return pullZone.Hostnames.find((h) => h.Value.toLowerCase() === host?.toLowerCase());
+}
+
+export function isConnected(pullZone: PullZone, host: string | undefined) {
+  return Boolean(findHostname(pullZone, host)?.HasCertificate);
+}
+
 export function getPullZone(apiKey: string, pullZoneId: number) {
   return apiJson(apiKey, { schema: PullZone, method: "GET", path: `/pullzone/${pullZoneId}` });
 }
@@ -132,7 +140,7 @@ export async function ensureDomains(
 
   let url = `https://${cdnHost}`;
   for (const domain of hostnames) {
-    const hostname = pullZone.Hostnames.find((h) => h.Value.toLowerCase() === domain);
+    const hostname = findHostname(pullZone, domain);
     if (!hostname) {
       await addHostname(apiKey, config.pullZoneId, domain);
       logDnsRecord(

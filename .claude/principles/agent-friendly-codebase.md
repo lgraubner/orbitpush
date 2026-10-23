@@ -24,4 +24,5 @@ Agents extend the patterns they see in the files they open. Shape the code so th
 - Pull zone reads and cache purges go through `getPullZone()` and `purgeCache()` in `src/bunny.ts`.
 - The API key has one source: `envApiKey()` in `src/bunny.ts`. `apiKeyFromEnv()` throws the missing-key error, and `init` falls back to a prompt.
 - The `EnableGeoZone*` request body has one builder: `geoZoneFlags()` in `src/bunny.ts`.
+- Whether a hostname is on the pull zone and connected has one answer: `findHostname()` and `isConnected()` in `src/bunny.ts`.
 - An error turns into text through `errorMessage()` in `src/log.ts`, not through `as Error` casts.

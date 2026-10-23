@@ -499,9 +499,31 @@ test("deploy gives one DNS instruction for a hostname it adds before DNS points 
     "POST https://api.bunny.net/pullzone/2/addHostname",
     "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=www.example.com",
   ]);
-  const output = stderr.mock.calls.join("");
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
   expect(output).toContain("www.example.com CNAME site.b-cdn.net");
+  expect(
+    output.split(
+      "Add this DNS record, then run `orbitpush domains add www.example.com` to finish:",
+    ),
+  ).toHaveLength(2);
+  expect(output).not.toContain("DNS for www.example.com does not point to bunny.net yet");
   expect(output).not.toContain("No SSL certificate");
+});
+
+test("deploy gives no certificate warning for a hostname it just added when the certificate fails for another reason", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { requests } = fakeBunny({ certificateFails: "CAA record forbids issuance" });
+
+  await deploy("key", { ...config(dir), domain: "www.example.com" });
+
+  expect(domainRequests(requests)).toEqual([
+    "POST https://api.bunny.net/pullzone/2/addHostname",
+    "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=www.example.com",
+  ]);
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  expect(output).toContain("www.example.com CNAME site.b-cdn.net");
+  expect(output).not.toContain("No SSL certificate for www.example.com");
 });
 
 test("deploy forces SSL on a domain that has a certificate without requesting another", async () => {

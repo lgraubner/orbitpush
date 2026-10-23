@@ -6,7 +6,7 @@ import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { type Config, readConfig, writeConfig } from "../src/config.ts";
-import { domains } from "../src/domains.ts";
+import { Cancelled, domains } from "../src/domains.ts";
 import { domainRules, isAliasRule } from "../src/rules.ts";
 
 const cwd = process.cwd();
@@ -66,12 +66,14 @@ function fakeBunny({
   dns = new Set<string>(),
   dnsFromCheck = Infinity,
   certificateError,
+  refuse = new Set<string>(),
 }: {
   hostnames?: Hostname[];
   edgeRules?: Rule[];
   dns?: Set<string>;
   dnsFromCheck?: number;
   certificateError?: string;
+  refuse?: Set<string>;
 } = {}) {
   const zone = { hostnames: [...hostnames], rules: [...edgeRules] };
   const requests: string[] = [];
@@ -90,6 +92,7 @@ function fakeBunny({
     requests.push(key);
     if (method !== "GET") writes.push(key);
     if (body !== undefined) (bodies[key] ??= []).push(body);
+    if (refuse.has(key)) return json({ Message: "Internal error" }, 500);
 
     if (key === `GET ${API}/pullzone/2`) {
       return json({ Id: 2, Name: "site", Hostnames: zone.hostnames, EdgeRules: zone.rules });
@@ -448,6 +451,7 @@ test("remove takes an alias off orbitpush.json, the pull zone and its redirect",
   expect(bodies[`DELETE ${API}/pullzone/2/removeHostname`]).toEqual([{ Hostname: "example.com" }]);
   expect(writes).toContain(`DELETE ${API}/pullzone/2/edgerules/alias-example.com`);
   expect(writes).not.toContain(`DELETE ${API}/pullzone/2/edgerules/alias-example.net`);
+  expect(writes).toContain(`POST ${API}/pullzone/2/purgeCache`);
   expect(output()).toContain("✔ Removed example.com. It no longer serves the site.");
 });
 
@@ -555,4 +559,113 @@ test("an unknown action prints the usage", async () => {
   await expect(domains("key", config, ["rename", "example.com"], options)).rejects.toThrow(
     /^Usage: orbitpush domains/,
   );
+});
+
+test("add of the primary domain writes the alias redirects once it gets a certificate in this run", async () => {
+  const config = await site({ domain: "www.example.com", aliases: ["example.com"] });
+  const { ruleWrites } = fakeBunny({
+    hostnames: [waiting("www.example.com"), connected("example.com")],
+    edgeRules: deployedRules({ domain: "www.example.com", aliases: [] }),
+    dns: new Set(["www.example.com"]),
+  });
+
+  await domains("key", config, ["add", "www.example.com"], options);
+
+  expect(ruleWrites().map((r) => r.Description)).toContainEqual(
+    aliasRule("example\\.com", "www\\.example\\.com"),
+  );
+});
+
+test("remove of an alias writes no redirect for the remaining alias while the primary domain has no certificate", async () => {
+  const config = await site({ domain: "www.example.com", aliases: ["example.com", "example.net"] });
+  const { writes, ruleWrites } = fakeBunny({
+    hostnames: [waiting("www.example.com"), connected("example.com"), connected("example.net")],
+    edgeRules: deployedRules({ domain: "www.example.com", aliases: [] }),
+  });
+
+  await domains("key", config, ["remove", "example.com"], options);
+
+  expect(writes).toContain(`DELETE ${API}/pullzone/2/removeHostname`);
+  expect(ruleWrites().filter((r) => isAliasRule(r.Description))).toEqual([]);
+});
+
+test("add leaves orbitpush.json unchanged when bunny.net refuses the hostname", async () => {
+  const config = await site({ domain: "www.example.com" });
+  const before = await fileText();
+  const { writes } = fakeBunny({
+    hostnames: [connected("www.example.com")],
+    refuse: new Set([`POST ${API}/pullzone/2/addHostname`]),
+  });
+
+  await expect(domains("key", config, ["add", "example.com"], options)).rejects.toThrow();
+
+  expect(writes).toContain(`POST ${API}/pullzone/2/addHostname`);
+  expect(await fileText()).toBe(before);
+});
+
+test.each(["add", "remove"])("%s takes one hostname at a time", async (action) => {
+  const config = await site({ domain: "www.example.com" });
+  const { requests } = fakeBunny();
+
+  await expect(
+    domains("key", config, [action, "a.example.com", "b.example.com"], options),
+  ).rejects.toThrow(`domains ${action} takes one hostname at a time`);
+
+  expect(requests).toEqual([]);
+});
+
+test("list with an extra argument prints the usage", async () => {
+  const config = await site();
+  const { requests } = fakeBunny();
+
+  await expect(domains("key", config, ["list", "extra"], options)).rejects.toThrow(
+    /^Usage: orbitpush domains/,
+  );
+
+  expect(requests).toEqual([]);
+});
+
+test("Ctrl+C during the DNS wait stops it, sends no further check and removes its listener", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const config = await site();
+  const { certificateChecks } = fakeBunny();
+  const listeners = process.listenerCount("SIGINT");
+
+  const done = domains("key", config, ["add", "www.example.com"], { interactive: true }).catch(
+    (e: unknown) => e,
+  );
+  while (certificateChecks.length < 2) {
+    await new Promise((resolve) => setImmediate(resolve));
+    await vi.advanceTimersByTimeAsync(1000);
+  }
+  expect(process.listenerCount("SIGINT")).toBeGreaterThan(listeners);
+  process.emit("SIGINT");
+  const checksAtSignal = certificateChecks.length;
+  const error = await settleWithFakeTimers(done);
+  await vi.advanceTimersByTimeAsync(20 * 60 * 1000);
+
+  expect(error).toBeInstanceOf(Cancelled);
+  expect(error).toMatchObject({
+    message:
+      "Stopped waiting. Run `orbitpush domains add www.example.com` again once the record is set.",
+  });
+  expect(certificateChecks).toHaveLength(checksAtSignal);
+  expect(process.listenerCount("SIGINT")).toBe(listeners);
+});
+
+test("the DNS wait removes its Ctrl+C listener when it ends", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const config = await site();
+  const { certificateChecks } = fakeBunny({ dnsFromCheck: 3 });
+  const listeners = process.listenerCount("SIGINT");
+
+  const done = domains("key", config, ["add", "www.example.com"], { interactive: true });
+  while (certificateChecks.length < 2) {
+    await new Promise((resolve) => setImmediate(resolve));
+    await vi.advanceTimersByTimeAsync(1000);
+  }
+  expect(process.listenerCount("SIGINT")).toBeGreaterThan(listeners);
+  await settleWithFakeTimers(done);
+
+  expect(process.listenerCount("SIGINT")).toBe(listeners);
 });

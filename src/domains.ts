@@ -3,7 +3,9 @@ import {
   api,
   checkRuleLimit,
   connectHostname,
+  findHostname,
   getPullZone,
+  isConnected,
   logDnsRecord,
   purgeCache,
   type PullZone,
@@ -19,16 +21,20 @@ const RECHECK_SECONDS = [5, 10, 20, 40, 60];
 
 type Options = { primary?: boolean; interactive: boolean };
 
+const USAGE = "Usage: orbitpush domains add|remove <host>, or orbitpush domains list";
+
+export class Cancelled extends Error {}
+
 export async function domains(
   apiKey: string,
   config: Config,
-  [action, host]: (string | undefined)[],
+  [action, host, ...extra]: (string | undefined)[],
   options: Options,
 ) {
-  if (action === "list") return listDomains(apiKey, config);
-
-  if (action !== "add" && action !== "remove") {
-    throw new Error("Usage: orbitpush domains add|remove <host>, or orbitpush domains list");
+  if (action === "list" && host === undefined) return listDomains(apiKey, config);
+  if (action !== "add" && action !== "remove") throw new Error(USAGE);
+  if (extra.length) {
+    throw new Error(`domains ${action} takes one hostname at a time. ${USAGE}`);
   }
 
   const problem = host ? hostnameProblem([host]) : "a hostname is missing";
@@ -56,13 +62,13 @@ async function addDomain(apiKey: string, config: Config, host: string, options: 
     if (problem) throw new Error(`Cannot add ${host}: ${problem}`);
   }
 
-  await writeConfig(config, { overwrite: true });
-
   let hostname = findHostname(pullZone, host);
   if (!hostname) {
     await addHostname(apiKey, config.pullZoneId, host);
     hostname = { Value: host, HasCertificate: false, ForceSSL: false };
   }
+
+  await writeConfig(config, { overwrite: true });
 
   const retry = `orbitpush domains add ${host}${options.primary ? " --primary" : ""}`;
   const connection = await waitForConnection(apiKey, config.pullZoneId, host, hostname, {
@@ -89,7 +95,7 @@ async function addDomain(apiKey: string, config: Config, host: string, options: 
   }
 
   const domain = config.domain?.toLowerCase();
-  const aliasRedirects = host === domain || Boolean(findHostname(pullZone, domain)?.HasCertificate);
+  const aliasRedirects = host === domain || isConnected(pullZone, domain);
   await applyRules(apiKey, config, pullZone, { aliasRedirects });
 
   if (host !== domain && !aliasRedirects) {
@@ -129,7 +135,7 @@ async function removeDomain(apiKey: string, config: Config, host: string) {
   if (hostname) await removeHostname(apiKey, config.pullZoneId, hostname.Value);
 
   await applyRules(apiKey, config, pullZone, {
-    aliasRedirects: Boolean(findHostname(pullZone, config.domain)?.HasCertificate),
+    aliasRedirects: isConnected(pullZone, config.domain),
   });
   log.success(`Removed ${host}. It no longer serves the site.`);
 }
@@ -152,7 +158,7 @@ async function listDomains(apiKey: string, config: Config) {
   for (const host of hosts) {
     const role = host === config.domain ? "primary domain" : `redirects to ${config.domain}`;
     const hostname = findHostname(pullZone, host);
-    if (hostname?.HasCertificate) {
+    if (isConnected(pullZone, host)) {
       log.success(`${host.padEnd(width)}  connected, ${role}`);
     } else if (hostname) {
       connected = false;
@@ -183,25 +189,42 @@ async function waitForConnection(
   logDnsRecord(host, cdnHost, "Add this DNS record at your DNS provider:");
   if (!interactive) return connection;
 
-  const stop = () => {
-    log.warn(`Stopped waiting. Run \`${retry}\` again once the record is set.`);
-    process.exit(130);
-  };
+  const controller = new AbortController();
+  const stop = () => controller.abort();
   process.once("SIGINT", stop);
 
-  const deadline = Date.now() + WAIT_MS;
-  for (let check = 0; connection.status === "dns" && Date.now() < deadline; check++) {
-    const seconds = RECHECK_SECONDS[Math.min(check, RECHECK_SECONDS.length - 1)];
-    log.status(`Waiting for DNS of ${host}, next check in ${seconds}s (Ctrl+C to stop)`);
-    await new Promise((resolve) =>
-      setTimeout(resolve, Math.min(seconds * 1000, deadline - Date.now())),
-    );
-    connection = await connectHostname(apiKey, pullZoneId, host, hostname);
+  try {
+    const deadline = Date.now() + WAIT_MS;
+    for (let check = 0; connection.status === "dns" && Date.now() < deadline; check++) {
+      const seconds = RECHECK_SECONDS[Math.min(check, RECHECK_SECONDS.length - 1)];
+      log.status(`Waiting for DNS of ${host}, next check in ${seconds}s (Ctrl+C to stop)`);
+      await sleep(Math.min(seconds * 1000, deadline - Date.now()), controller.signal);
+      connection = await connectHostname(apiKey, pullZoneId, host, hostname);
+    }
+  } catch (error) {
+    if (!controller.signal.aborted) throw error;
+    throw new Cancelled(`Stopped waiting. Run \`${retry}\` again once the record is set.`);
+  } finally {
+    process.off("SIGINT", stop);
   }
 
-  process.off("SIGINT", stop);
-
   return connection;
+}
+
+function sleep(ms: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
 }
 
 async function applyRules(
@@ -222,10 +245,6 @@ async function applyRules(
   });
   const changes = await syncRules(apiKey, pullZone, rules);
   if (changes.added || changes.removed) await purgeCache(apiKey, config.pullZoneId);
-}
-
-function findHostname(pullZone: PullZone, host: string | undefined) {
-  return pullZone.Hostnames.find((h) => h.Value.toLowerCase() === host?.toLowerCase());
 }
 
 function hasHost(hosts: string[], host: string) {
