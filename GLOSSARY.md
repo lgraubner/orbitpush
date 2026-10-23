@@ -30,13 +30,17 @@ _Avoid_: SPA fallback, `spa` option
 The `trailingSlash` setting: `always` redirects `/guides` to `/guides/`, `never` the other way, `ignore` does neither. One managed rule, default `always`, or `ignore` in SPA mode.
 _Avoid_: pretty URLs, which on Netlify also serve `/about.html` at `/about/`
 
-**Custom domain**:
+**Primary domain**:
 The one hostname in `domain` that serves the site. Every other hostname of the site is an alias.
-_Avoid_: main domain, primary domain
+_Avoid_: custom domain, main domain
 
 **Alias**:
-A hostname in `aliases` that is added to the pull zone with SSL and 301-redirects to the custom domain, keeping path and query string.
+A hostname in `aliases` that is added to the pull zone with SSL and 301-redirects to the primary domain, keeping path and query string. Until the primary domain is connected, an alias serves the site itself.
 _Avoid_: secondary domain, redirect domain
+
+**Connected**:
+Said of a hostname on the pull zone that has an SSL certificate, so it serves the site over HTTPS. A hostname whose DNS does not point to bunny.net yet is on the pull zone but not connected.
+_Avoid_: active, verified
 
 **Disabled site**:
 A pull zone with the edge rule `orbitpush disabled`, which blocks every request. `disable` adds it, `enable` removes it, and `deploy` leaves it in place. The rule on the pull zone is the only record of the state.
