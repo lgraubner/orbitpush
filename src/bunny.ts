@@ -1,5 +1,6 @@
 import { type Config, CONFIG_FILE, GEO_ZONES, type GeoZone } from "./config.ts";
 import { errorMessage, log } from "./log.ts";
+import { DISABLED_RULE, type EdgeRule, isAliasRule, isManaged, MAX_EDGE_RULES } from "./rules.ts";
 import { issues, z } from "./zod.ts";
 
 export const API_KEY_URL = "https://dash.bunny.net/account/api-key";
@@ -189,7 +190,7 @@ export async function ensureDomains(
     if (domain === hostnames[0]) url = `https://${domain}`;
   }
 
-  return url;
+  return { url, connected: url !== `https://${cdnHost}` };
 }
 
 export async function purgeCache(apiKey: string, pullZoneId: number) {
@@ -309,4 +310,69 @@ export async function pool<T>(items: T[], size: number, fn: (item: T) => Promise
       }
     }),
   );
+}
+
+export function checkRuleLimit(pullZone: PullZone, rules: EdgeRule[]) {
+  const unmanaged = pullZone.EdgeRules.filter((r) => !isManaged(r));
+  const managed = new Set(rules.map((r) => r.Description)).size;
+  // bunny.net rejects every edge rule write on a full zone, updates included
+  if (managed + unmanaged.length < MAX_EDGE_RULES) return;
+
+  throw new Error(
+    `This deploy needs ${managed + unmanaged.length} edge rules (${managed} from orbitpush, ${unmanaged.length} others on the pull zone). bunny.net allows ${MAX_EDGE_RULES} edge rules per pull zone and accepts no change to a full one, so a deploy can use ${MAX_EDGE_RULES - 1}. Remove entries from redirects or headers in orbitpush.json, or ask bunny.net support to raise the limit.`,
+  );
+}
+
+export async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeRule[]) {
+  const pullZoneId = pullZone.Id;
+  if (pullZone.EdgeRules.some((r) => r.Description === DISABLED_RULE)) {
+    log.warn("The site is disabled. Run `orbitpush enable` to serve it again.");
+  }
+
+  const wanted = new Map<string, EdgeRule & { OrderIndex: number }>();
+  rules.forEach((rule, OrderIndex) => {
+    if (!wanted.has(rule.Description)) wanted.set(rule.Description, { ...rule, OrderIndex });
+  });
+
+  const kept = new Map<string, { Guid: string; OrderIndex: number }>();
+  const removed = pullZone.EdgeRules.filter((r) => {
+    if (!isManaged(r)) return false;
+    if (!wanted.has(r.Description) || kept.has(r.Description)) return true;
+
+    kept.set(r.Description, r);
+    return false;
+  });
+  const writes = [...wanted.values()].map((rule) => {
+    const deployed = kept.get(rule.Description);
+    return deployed ? { ...rule, Guid: deployed.Guid } : rule;
+  });
+  const added = writes.length - kept.size;
+  const changes = { added, removed: removed.length, kept: kept.size };
+  if (!writes.length && !removed.length) return changes;
+
+  log.status("Updating edge rules");
+
+  const remove = async (rules: typeof removed) => {
+    for (const rule of rules) {
+      await api(apiKey, {
+        method: "DELETE",
+        path: `/pullzone/${pullZoneId}/edgerules/${rule.Guid}`,
+      });
+    }
+  };
+  // bunny.net rejects every write on a full zone, so delete first when adding first would fill it
+  const deleteFirst = pullZone.EdgeRules.length + added >= MAX_EDGE_RULES;
+  const first = deleteFirst ? removed : removed.filter((r) => isAliasRule(r.Description));
+  await remove(first);
+
+  for (const rule of writes) {
+    await api(apiKey, {
+      method: "POST",
+      path: `/pullzone/${pullZoneId}/edgerules/addOrUpdate`,
+      body: rule,
+    });
+  }
+
+  await remove(removed.filter((r) => !first.includes(r)));
+  return changes;
 }

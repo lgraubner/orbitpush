@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import type { Header, Redirect } from "./config.ts";
+import type { Config, Header, Redirect } from "./config.ts";
 import { errorMessage } from "./log.ts";
 
 // Bunny edge rule enums: https://docs.bunny.net/api-reference/core/pull-zone/addupdate-edge-rule
@@ -132,6 +132,22 @@ function rule({
 
 function ruleHash(body: Omit<EdgeRule, "Description">) {
   return createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 10);
+}
+
+export function managedRules(config: Config, { aliasRedirects }: { aliasRedirects: boolean }) {
+  const redirects = redirectRules(config.redirects);
+  const headers = headerRules(config.headers);
+
+  return {
+    rules: [
+      ...domainRules(aliasRedirects ? config : { ...config, aliases: [] }),
+      ...redirects.rules,
+      ...headers.rules,
+      ...trailingSlashRule(config.trailingSlash ?? (redirects.spa ? "ignore" : "always")),
+    ],
+    spa: redirects.spa,
+    warnings: [...redirects.warnings, ...headers.warnings],
+  };
 }
 
 export function domainRules({

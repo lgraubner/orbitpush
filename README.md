@@ -106,7 +106,7 @@ Settings are applied on every deploy, so you can change them later. A key not li
 
 ### Domains and search engines
 
-Each hostname in `aliases` redirects to `domain` with status `301`, keeping the path and query string, so `https://example.com/a?b=1` goes to `https://www.example.com/a?b=1`. An alias needs the same DNS record as a domain. To swap an alias with `domain`, swap them in `orbitpush.json` and deploy: the old alias redirect is deleted before the new one is added, so the two never redirect in a loop.
+Each hostname in `aliases` redirects to `domain` with status `301`, keeping the path and query string, so `https://example.com/a?b=1` goes to `https://www.example.com/a?b=1`. An alias needs the same DNS record as a domain. To swap an alias with `domain`, swap them in `orbitpush.json` and deploy: the old alias redirect is deleted before the new one is added, so the two never redirect in a loop. Aliases redirect only once `domain` has an SSL certificate: until then they serve the site themselves, so a swap to a domain whose DNS is not set yet never sends visitors to a hostname without HTTPS.
 
 While `domain` is set, responses on `<name>.b-cdn.net` carry `X-Robots-Tag: noindex`, so search engines index the custom domain instead.
 

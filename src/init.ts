@@ -194,7 +194,7 @@ export async function init(
 
   log.success(`Created ${CONFIG_FILE}`);
 
-  const url = await ensureDomains(apiKey, config, await getPullZone(apiKey, config.pullZoneId));
+  const { url } = await ensureDomains(apiKey, config, await getPullZone(apiKey, config.pullZoneId));
   log.success(`Ready: ${url}`);
   if (!envApiKey()) log.detail("Set BUNNY_API_KEY in your environment before deploying.");
   if (!deploying) log.detail("Next: build your site, then run `npx orbitpush deploy`");

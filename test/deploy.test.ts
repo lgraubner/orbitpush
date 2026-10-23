@@ -8,7 +8,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import type { Config, Redirect } from "../src/config.ts";
 import { deploy } from "../src/deploy.ts";
-import { domainRules, redirectRules } from "../src/rules.ts";
+import { domainRules, isAliasRule, redirectRules, trailingSlashRule } from "../src/rules.ts";
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex").toUpperCase();
 
@@ -1149,4 +1149,83 @@ test("deploy prints no Edge rules summary when there is no managed rule", async 
 
   expect(output).toContain("› Files:");
   expect(output).not.toContain("Edge rules");
+});
+
+test("deploy writes no alias redirect to a swapped-in domain without a certificate, deletes the old one and warns", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const swapped = { name: "site", domain: "example.com", aliases: ["www.example.com"] };
+  const before = domainRules({ name: "site", domain: "www.example.com", aliases: ["example.com"] });
+  const current = domainRules(swapped).filter((r) => isAliasRule(r.Description));
+  const { writes, edgeRuleWrites } = fakeBunny({
+    hostnames: [{ Value: "www.example.com", HasCertificate: true, ForceSSL: true }],
+    certificateFails: true,
+    edgeRules: [...before, ...current].map((r, i) => ({
+      Guid: isAliasRule(r.Description) ? `alias${i}` : `g${i}`,
+      Description: r.Description,
+      OrderIndex: i,
+    })),
+  });
+
+  await deploy("key", { ...config(dir), ...swapped });
+
+  const written = (edgeRuleWrites as Rule[]).map((r) => r.Description);
+  expect(written.filter(isAliasRule)).toEqual([]);
+  expect(written).toEqual(
+    expect.arrayContaining(
+      [...domainRules({ ...swapped, aliases: [] }), ...trailingSlashRule("ignore")].map(
+        (r) => r.Description,
+      ),
+    ),
+  );
+  for (const [i, r] of [...before, ...current].entries()) {
+    if (isAliasRule(r.Description)) {
+      expect(writes).toContain(`DELETE https://api.bunny.net/pullzone/2/edgerules/alias${i}`);
+    }
+  }
+
+  expect(stripVTControlCharacters(stderr.mock.calls.join(""))).toContain(
+    "! www.example.com will redirect to example.com once it has HTTPS.",
+  );
+});
+
+test("deploy writes the alias redirects once it gets the domain a certificate in this run", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const target = {
+    name: "site",
+    domain: "example.com",
+    aliases: ["www.example.com", "example.net"],
+  };
+  const { requests, edgeRuleWrites } = fakeBunny({
+    hostnames: [{ Value: "www.example.com", HasCertificate: true, ForceSSL: true }],
+    edgeRules: [],
+  });
+
+  await deploy("key", { ...config(dir), ...target });
+
+  expect(requests).toContain(
+    "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=example.com",
+  );
+  expect((edgeRuleWrites as Rule[]).map((r) => r.Description).filter(isAliasRule)).toEqual(
+    domainRules(target)
+      .map((r) => r.Description)
+      .filter(isAliasRule),
+  );
+  expect(stderr.mock.calls.join("")).not.toContain("will redirect to");
+});
+
+test("deploy gives no alias warning for a domain without a certificate when there are no aliases", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny({
+    hostnames: [{ Value: "example.com", HasCertificate: false, ForceSSL: false }],
+    certificateFails: true,
+  });
+
+  await deploy("key", { ...config(dir), domain: "example.com" });
+
+  const output = stderr.mock.calls.join("");
+  expect(output).toContain("does not point to bunny.net");
+  expect(output).not.toContain("will redirect to");
 });

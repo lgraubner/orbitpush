@@ -6,6 +6,7 @@ import { join, relative, sep } from "node:path";
 import {
   api,
   apiJson,
+  checkRuleLimit,
   ensureDomains,
   geoZoneFlags,
   getPullZone,
@@ -14,21 +15,12 @@ import {
   type PullZone,
   StorageZone,
   storage,
+  syncRules,
 } from "./bunny.ts";
 import type { Config } from "./config.ts";
 import { isMissing } from "./files.ts";
 import { log, style } from "./log.ts";
-import {
-  DISABLED_RULE,
-  domainRules,
-  MAX_EDGE_RULES,
-  type EdgeRule,
-  isAliasRule,
-  isManaged,
-  headerRules,
-  redirectRules,
-  trailingSlashRule,
-} from "./rules.ts";
+import { managedRules } from "./rules.ts";
 
 const RULE_FILES = ["_headers", "_redirects"];
 
@@ -52,13 +44,8 @@ export async function deploy(
   });
   if (!files.has("index.html")) log.warn(`No index.html in ${config.outputDir}`);
 
-  const { rules: configRules, spa } = readRules(config);
-  const rules = [
-    ...domainRules(config),
-    ...configRules,
-    ...trailingSlashRule(config.trailingSlash ?? (spa ? "ignore" : "always")),
-  ];
-
+  const { rules, spa, warnings } = managedRules(config, { aliasRedirects: true });
+  for (const warning of warnings) log.warn(warning);
   checkRuleLimit(pullZone, rules);
 
   log.status("Comparing with storage zone");
@@ -85,14 +72,21 @@ export async function deploy(
     upload,
   );
 
-  const url = await applySettings(apiKey, {
+  const { url, connected } = await applySettings(apiKey, {
     config,
     pullZone,
     spa,
     has404: files.has("404.html"),
     pruneHostnames,
   });
-  const ruleChanges = await syncRules(apiKey, pullZone, rules);
+  if (config.domain && config.aliases.length && !connected) {
+    log.warn(`${config.aliases.join(", ")} will redirect to ${config.domain} once it has HTTPS.`);
+  }
+  const ruleChanges = await syncRules(
+    apiKey,
+    pullZone,
+    managedRules(config, { aliasRedirects: connected }).rules,
+  );
 
   if (stale.length) {
     log.status(`Deleting ${count(stale.length, "stale file")}`);
@@ -195,15 +189,6 @@ function isHtml(path: string) {
   return path.endsWith(".html");
 }
 
-function readRules(config: Config) {
-  const redirects = redirectRules(config.redirects);
-  const headers = headerRules(config.headers);
-
-  for (const warning of [...redirects.warnings, ...headers.warnings]) log.warn(warning);
-
-  return { rules: [...redirects.rules, ...headers.rules], spa: redirects.spa };
-}
-
 async function applySettings(
   apiKey: string,
   {
@@ -238,69 +223,4 @@ async function applySettings(
     },
   });
   return ensureDomains(apiKey, config, pullZone, { prune: pruneHostnames });
-}
-
-function checkRuleLimit(pullZone: PullZone, rules: EdgeRule[]) {
-  const unmanaged = pullZone.EdgeRules.filter((r) => !isManaged(r));
-  const managed = new Set(rules.map((r) => r.Description)).size;
-  // bunny.net rejects every edge rule write on a full zone, updates included
-  if (managed + unmanaged.length < MAX_EDGE_RULES) return;
-
-  throw new Error(
-    `This deploy needs ${managed + unmanaged.length} edge rules (${managed} from orbitpush, ${unmanaged.length} others on the pull zone). bunny.net allows ${MAX_EDGE_RULES} edge rules per pull zone and accepts no change to a full one, so a deploy can use ${MAX_EDGE_RULES - 1}. Remove entries from redirects or headers in orbitpush.json, or ask bunny.net support to raise the limit.`,
-  );
-}
-
-async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeRule[]) {
-  const pullZoneId = pullZone.Id;
-  if (pullZone.EdgeRules.some((r) => r.Description === DISABLED_RULE)) {
-    log.warn("The site is disabled. Run `orbitpush enable` to serve it again.");
-  }
-
-  const wanted = new Map<string, EdgeRule & { OrderIndex: number }>();
-  rules.forEach((rule, OrderIndex) => {
-    if (!wanted.has(rule.Description)) wanted.set(rule.Description, { ...rule, OrderIndex });
-  });
-
-  const kept = new Map<string, { Guid: string; OrderIndex: number }>();
-  const removed = pullZone.EdgeRules.filter((r) => {
-    if (!isManaged(r)) return false;
-    if (!wanted.has(r.Description) || kept.has(r.Description)) return true;
-
-    kept.set(r.Description, r);
-    return false;
-  });
-  const writes = [...wanted.values()].map((rule) => {
-    const deployed = kept.get(rule.Description);
-    return deployed ? { ...rule, Guid: deployed.Guid } : rule;
-  });
-  const added = writes.length - kept.size;
-  const changes = { added, removed: removed.length, kept: kept.size };
-  if (!writes.length && !removed.length) return changes;
-
-  log.status("Updating edge rules");
-
-  const remove = async (rules: typeof removed) => {
-    for (const rule of rules) {
-      await api(apiKey, {
-        method: "DELETE",
-        path: `/pullzone/${pullZoneId}/edgerules/${rule.Guid}`,
-      });
-    }
-  };
-  // bunny.net rejects every write on a full zone, so delete first when adding first would fill it
-  const deleteFirst = pullZone.EdgeRules.length + added >= MAX_EDGE_RULES;
-  const first = deleteFirst ? removed : removed.filter((r) => isAliasRule(r.Description));
-  await remove(first);
-
-  for (const rule of writes) {
-    await api(apiKey, {
-      method: "POST",
-      path: `/pullzone/${pullZoneId}/edgerules/addOrUpdate`,
-      body: rule,
-    });
-  }
-
-  await remove(removed.filter((r) => !first.includes(r)));
-  return changes;
 }
