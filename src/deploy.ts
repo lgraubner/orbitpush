@@ -132,9 +132,17 @@ function logTarget(config: Config, zone: StorageZone, pullZone: PullZone) {
     : config.region;
 
   log.step(`Deploying ${style("bold", config.outputDir)} to ${style("bold", url)}`);
-  log.detail(`Storage zone  ${zone.Name} (${regions})`);
-  log.detail(`Pull zone     ${pullZone.Name}`);
-  if (config.aliases.length) log.detail(`Aliases       ${config.aliases.join(", ")}`);
+  const lines: [string, string][] =
+    zone.Name === config.name && pullZone.Name === config.name
+      ? [["Project", `${config.name} (${regions})`]]
+      : [
+          ["Storage zone", `${zone.Name} (${regions})`],
+          ["Pull zone", pullZone.Name],
+        ];
+  if (config.aliases.length) lines.push(["Aliases", config.aliases.join(", ")]);
+
+  const width = Math.max(...lines.map(([label]) => label.length));
+  for (const [label, value] of lines) log.detail(`${label.padEnd(width)}  ${value}`);
 }
 
 async function readOutput(dir: string, { migrated }: { migrated: boolean }) {

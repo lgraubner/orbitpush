@@ -281,6 +281,42 @@ test("deploy names the b-cdn.net URL and lists no replicas or aliases when there
   expect(output.indexOf("› Files:")).toBeGreaterThan(header);
 });
 
+test("deploy shows one project line instead of the zones when both zones carry the project name", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny();
+
+  await deploy("key", { ...config(dir), replicationRegions: ["DE"] });
+
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  const header = output.indexOf(`Deploying ${dir} to https://site.b-cdn.net`);
+  expect(header).toBeGreaterThanOrEqual(0);
+  expect(output).toContain("Project  site (DE)\n");
+  expect(output).not.toContain("Storage zone");
+  expect(output).not.toContain("Pull zone");
+  expect(output).not.toContain("Aliases");
+  expect(output.indexOf("› Files:")).toBeGreaterThan(header);
+});
+
+test("deploy pads the aliases to the project label when both zones carry the project name", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny();
+
+  await deploy("key", {
+    ...config(dir),
+    aliases: ["example.com", "old.example.com"],
+    region: "UK",
+    replicationRegions: ["UK", "DE", "NY"],
+  });
+
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  expect(output).toContain("Project  site (UK, replicated to DE, NY)\n");
+  expect(output).toContain("Aliases  example.com, old.example.com");
+  expect(output).not.toContain("Storage zone");
+  expect(output).not.toContain("Pull zone");
+});
+
 test("deploy neither reads nor uploads _redirects and _headers, and says how to migrate them", async () => {
   const dir = await outputDir();
   await writeFile(join(dir, "_redirects"), "/a /b");
