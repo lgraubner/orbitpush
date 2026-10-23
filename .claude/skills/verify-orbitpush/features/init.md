@@ -34,5 +34,5 @@ Preconditions:
 
 - The run's state file is shared by every step of a run. A second init with a taken name in a fresh work dir of the same run fails with `✖ POST /storagezone failed: The storage zone name is already taken (HTTP 400)`; in the same work dir it stops earlier, at `orbitpush.json already exists.` Use a new name or a new run.
 - The replication checkbox omits the main region, so the arrow count for `NY` depends on the region picked before.
-- The fake's SSL default fails, as for a domain whose DNS is not pointed yet. init hides that failure for hostnames it just added; the `No SSL certificate ... yet` warning appears from the next `deploy` on (`features/settings.md`).
+- The fake's SSL default fails, as for a domain whose DNS is not pointed yet. init hides that failure for hostnames it just added; the `DNS for ... does not point to bunny.net yet` warning appears from the next `deploy` on (`features/settings.md`).
 - A hard kill during zone creation (not an error) skips the rollback. That path is not covered by any recipe.

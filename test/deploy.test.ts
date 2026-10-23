@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -56,15 +57,17 @@ function fakeBunny({
   storageUnauthorized = 0,
   failUpload,
   hang,
+  pullZoneName = "site",
 }: {
   storageZone?: Record<string, unknown>;
   edgeRules?: Record<string, unknown>[];
   slowAssets?: boolean;
   hostnames?: { Value: string; HasCertificate: boolean; ForceSSL: boolean }[];
-  certificateFails?: boolean;
+  certificateFails?: boolean | string;
   storageUnauthorized?: number;
   failUpload?: string;
   hang?: string;
+  pullZoneName?: string;
 } = {}) {
   let unauthorized = storageUnauthorized;
   const requests: string[] = [];
@@ -113,7 +116,7 @@ function fakeBunny({
     if (url === "https://api.bunny.net/pullzone/2" && method === "GET") {
       return json({
         Id: 2,
-        Name: "site",
+        Name: pullZoneName,
         Hostnames: hostnames,
         EdgeRules: edgeRules,
       });
@@ -139,7 +142,15 @@ function fakeBunny({
     }
 
     if (url.startsWith("https://api.bunny.net/pullzone/loadFreeCertificate") && certificateFails) {
-      return new Response(JSON.stringify({ Message: "DNS not set up" }), { status: 400 });
+      return new Response(
+        JSON.stringify({
+          Message:
+            typeof certificateFails === "string"
+              ? certificateFails
+              : "The domain www.example.com is not pointing to our servers.",
+        }),
+        { status: 400 },
+      );
     }
 
     return new Response(null, { status: 201 });
@@ -199,6 +210,77 @@ test("deploy uploads changed files, deletes stale ones, syncs managed rules and 
   });
 });
 
+test("deploy says where it deploys before the summary: domain, zones from bunny.net, replicas and aliases", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny({
+    pullZoneName: "site-cdn",
+    hostnames: [{ Value: "www.example.com", HasCertificate: true, ForceSSL: true }],
+  });
+
+  await deploy("key", {
+    ...config(dir),
+    name: "project",
+    domain: "www.example.com",
+    aliases: ["example.com", "old.example.com"],
+    region: "UK",
+    replicationRegions: ["UK", "DE", "NY"],
+  });
+
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  const header = output.indexOf(`Deploying ${dir} to https://www.example.com`);
+  expect(header).toBeGreaterThanOrEqual(0);
+  expect(output).toContain("Storage zone  site (UK, replicated to DE, NY)");
+  expect(output).toContain("Pull zone     site-cdn");
+  expect(output).toContain("Aliases       example.com, old.example.com");
+  expect(output.indexOf("› Files:")).toBeGreaterThan(header);
+});
+
+test("deploy names the b-cdn.net URL until the domain has a certificate", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny({
+    pullZoneName: "site-cdn",
+    hostnames: [{ Value: "www.example.com", HasCertificate: false, ForceSSL: false }],
+    certificateFails: true,
+  });
+
+  const url = await deploy("key", { ...config(dir), domain: "www.example.com" });
+
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  expect(output).toContain(`Deploying ${dir} to https://site-cdn.b-cdn.net`);
+  expect(url).toBe("https://site-cdn.b-cdn.net");
+});
+
+test("deploy returns the domain URL once it gets the domain a certificate", async () => {
+  const dir = await outputDir();
+  vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny({
+    pullZoneName: "site-cdn",
+    hostnames: [{ Value: "www.example.com", HasCertificate: false, ForceSSL: false }],
+  });
+
+  const url = await deploy("key", { ...config(dir), domain: "www.example.com" });
+
+  expect(url).toBe("https://www.example.com");
+});
+
+test("deploy names the b-cdn.net URL and lists no replicas or aliases when there are none", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny({ pullZoneName: "site-cdn" });
+
+  await deploy("key", { ...config(dir), name: "project", replicationRegions: ["DE"] });
+
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  const header = output.indexOf(`Deploying ${dir} to https://site-cdn.b-cdn.net`);
+  expect(header).toBeGreaterThanOrEqual(0);
+  expect(output).toContain("Storage zone  site (DE)\n");
+  expect(output).toContain("Pull zone     site-cdn");
+  expect(output).not.toContain("Aliases");
+  expect(output.indexOf("› Files:")).toBeGreaterThan(header);
+});
+
 test("deploy neither reads nor uploads _redirects and _headers, and says how to migrate them", async () => {
   const dir = await outputDir();
   await writeFile(join(dir, "_redirects"), "/a /b");
@@ -210,11 +292,12 @@ test("deploy neither reads nor uploads _redirects and _headers, and says how to 
 
   expect(writes.filter((w) => /_redirects|_headers/.test(w))).toEqual([]);
   expect(edgeRuleWrites).toEqual([]);
-  const output = stderr.mock.calls.join("");
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
   for (const file of ["_redirects", "_headers"]) {
-    expect(output).toContain(`${file} is not read: rules live in orbitpush.json`);
+    expect(output).toContain(
+      `${file} is not read. Run \`orbitpush migrate-netlify\` to copy its rules to orbitpush.json.`,
+    );
   }
-  expect(output).toContain("orbitpush migrate-netlify");
 });
 
 test("deploy leaves out the migrate hint once orbitpush.json has rules", async () => {
@@ -225,8 +308,8 @@ test("deploy leaves out the migrate hint once orbitpush.json has rules", async (
 
   await deploy("key", config(dir, "/a /b"));
 
-  const output = stderr.mock.calls.join("");
-  expect(output).toContain("_redirects is not read: rules live in orbitpush.json.");
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  expect(output).toContain("_redirects is not read: its rules live in orbitpush.json.");
   expect(output).not.toContain("migrate-netlify");
 });
 
@@ -447,7 +530,51 @@ test("deploy warns and skips Force SSL when the certificate cannot be obtained",
     "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=www.example.com",
   ]);
   expect(writes).toContain("POST https://api.bunny.net/pullzone/2/purgeCache");
-  expect(stderr.mock.calls.join("")).toContain("No SSL certificate for www.example.com");
+  expect(stderr.mock.calls.join("")).toContain(
+    "DNS for www.example.com does not point to bunny.net",
+  );
+});
+
+test.each([
+  "The domain www.example.com is not pointing to our servers.",
+  "THE DOMAIN WWW.EXAMPLE.COM IS NOT POINTING TO OUR SERVERS.",
+])("deploy explains the missing DNS record when bunny.net says %s", async (message) => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { requests } = fakeBunny({
+    hostnames: [{ Value: "www.example.com", HasCertificate: false, ForceSSL: false }],
+    certificateFails: message,
+    pullZoneName: "site-cdn",
+  });
+
+  await deploy("key", { ...config(dir), domain: "www.example.com" });
+
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  expect(output).toContain(
+    "! DNS for www.example.com does not point to bunny.net yet. Add this record, then deploy again to enable HTTPS:",
+  );
+  expect(output).toContain("www.example.com CNAME site-cdn.b-cdn.net");
+  expect(output).not.toContain("HTTP 400");
+  expect(output).not.toContain("loadFreeCertificate");
+  expect(requests.some((r) => r.includes("setForceSSL"))).toBe(false);
+});
+
+test("deploy passes on bunny.net's reason for any other certificate failure", async () => {
+  const dir = await outputDir();
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny({
+    hostnames: [{ Value: "www.example.com", HasCertificate: false, ForceSSL: false }],
+    certificateFails: "CAA record forbids issuance",
+    pullZoneName: "site-cdn",
+  });
+
+  await deploy("key", { ...config(dir), domain: "www.example.com" });
+
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  expect(output).toMatch(
+    /! No SSL certificate for www\.example\.com yet\. bunny\.net: .*CAA record forbids issuance/,
+  );
+  expect(output).not.toContain("CNAME");
 });
 
 test("deploy leaves a domain with certificate and Force SSL alone, matching case-insensitively", async () => {
@@ -919,4 +1046,107 @@ test("deploy with pruneHostnames and no domain removes every custom hostname", a
     { Hostname: "Example.com" },
     { Hostname: "old.example.com" },
   ]);
+});
+
+async function site(files: Record<string, string>) {
+  const dir = await mkdtemp(join(tmpdir(), "orbitpush-"));
+  for (const [path, content] of Object.entries(files)) {
+    await mkdir(dirname(join(dir, path)), { recursive: true });
+    await writeFile(join(dir, path), content);
+  }
+
+  return dir;
+}
+
+async function deployOutput(
+  files: Record<string, string>,
+  overrides: Partial<Config> = {},
+  bunny: Parameters<typeof fakeBunny>[0] = {},
+) {
+  const dir = await site(files);
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { writes } = fakeBunny(bunny);
+
+  await deploy("key", { ...config(dir), ...overrides });
+
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  return { output, puts: writes.filter((w) => w.startsWith("PUT ")) };
+}
+
+test("deploy counts uploaded, deleted and unchanged files without listing them", async () => {
+  const { output } = await deployOutput({
+    "index.html": "new",
+    "assets/app.js": "same",
+    "404.html": "nope",
+  });
+
+  expect(output).toMatch(/^› Files: 2 uploaded, 1 deleted, 1 unchanged$/m);
+  for (const path of ["404.html", "index.html", "gone.html", "app.js"]) {
+    expect(output).not.toContain(path);
+  }
+});
+
+test.each([
+  [{ "index.html": "<h1>old</h1>", "assets/app.js": "same" }, "1 deleted, 2 unchanged"],
+  [{ "index.html": "new" }, "1 uploaded, 2 deleted"],
+  [
+    { "index.html": "new", "assets/app.js": "changed", "404.html": "nope" },
+    "3 uploaded, 1 deleted",
+  ],
+])("deploy leaves zero counts out of the Files summary for %j", async (files, counts) => {
+  const { output } = await deployOutput(files);
+
+  expect(output).toMatch(new RegExp(`^› Files: ${counts}$`, "m"));
+});
+
+test("deploy uploads nothing and lists no file when every file is unchanged", async () => {
+  const { output, puts } = await deployOutput({
+    "index.html": "<h1>old</h1>",
+    "assets/app.js": "same",
+  });
+
+  expect(puts).toEqual([]);
+  expect(output).not.toMatch(/^\s*[+~] /m);
+});
+
+test("deploy shows no progress steps without a TTY", async () => {
+  const { output } = await deployOutput({ "index.html": "new" }, { redirects: redirects("/c /d") });
+
+  expect(output).toContain("› Files:");
+  for (const step of [
+    "Comparing with storage zone",
+    "Uploading",
+    "Applying settings",
+    "Purging cache",
+  ]) {
+    expect(output).not.toContain(step);
+  }
+});
+
+test("deploy counts added, removed and kept edge rules without listing them", async () => {
+  const { output } = await deployOutput(
+    { "index.html": "new" },
+    { redirects: redirects("/a /b\n/c /d") },
+  );
+
+  expect(output).toMatch(/^› Edge rules: 1 added, 1 removed, 1 kept$/m);
+  for (const rule of ["/a /b", "/c /d", "/x /y"]) expect(output).not.toContain(rule);
+  expect(output.indexOf("› Edge rules:")).toBeGreaterThan(output.indexOf("› Files:"));
+});
+
+test("deploy leaves zero counts out of the Edge rules summary", async () => {
+  const { output } = await deployOutput(
+    { "index.html": "new" },
+    { domain: "www.example.com" },
+    { edgeRules: [] },
+  );
+
+  expect(output).toMatch(/^› Edge rules: 1 added$/m);
+});
+
+test("deploy prints no Edge rules summary when there is no managed rule", async () => {
+  const { output } = await deployOutput({ "index.html": "new" }, {}, { edgeRules: [] });
+
+  expect(output).toContain("› Files:");
+  expect(output).not.toContain("Edge rules");
 });

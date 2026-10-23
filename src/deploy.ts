@@ -37,11 +37,16 @@ export async function deploy(
   config: Config,
   { pruneHostnames = false }: { pruneHostnames?: boolean } = {},
 ) {
-  const zone = await apiJson(apiKey, {
-    schema: StorageZone,
-    method: "GET",
-    path: `/storagezone/${config.storageZoneId}`,
-  });
+  const [zone, pullZone] = await Promise.all([
+    apiJson(apiKey, {
+      schema: StorageZone,
+      method: "GET",
+      path: `/storagezone/${config.storageZoneId}`,
+    }),
+    getPullZone(apiKey, config.pullZoneId),
+  ]);
+  logTarget(config, zone, pullZone);
+
   const files = await readOutput(config.outputDir, {
     migrated: config.redirects.length > 0 || config.headers.length > 0,
   });
@@ -54,10 +59,9 @@ export async function deploy(
     ...trailingSlashRule(config.trailingSlash ?? (spa ? "ignore" : "always")),
   ];
 
-  const pullZone = await getPullZone(apiKey, config.pullZoneId);
   checkRuleLimit(pullZone, rules);
 
-  log.step("Comparing with storage zone");
+  log.status("Comparing with storage zone");
   const bucket = storage(zone);
   const remote = await bucket.list();
   const changed = [...files].filter(
@@ -65,10 +69,10 @@ export async function deploy(
   );
   const stale = [...remote.keys()].filter((path) => !files.has(path));
 
-  log.step(`Uploading ${changed.length} of ${files.size} files`);
+  let uploaded = 0;
   const upload = async ([path, file]: (typeof changed)[number]) => {
     await bucket.put({ path, data: await openAsBlob(file.absolute), checksum: file.checksum });
-    log.detail(`- ${path}`);
+    log.status(`Uploading ${++uploaded} of ${count(changed.length, "file")}`);
   };
   await pool(
     changed.filter(([path]) => !isHtml(path)),
@@ -81,23 +85,59 @@ export async function deploy(
     upload,
   );
 
-  const cdnHost = await applySettings(apiKey, {
+  const url = await applySettings(apiKey, {
     config,
     pullZone,
     spa,
     has404: files.has("404.html"),
     pruneHostnames,
   });
-  await syncRules(apiKey, pullZone, rules);
+  const ruleChanges = await syncRules(apiKey, pullZone, rules);
 
   if (stale.length) {
-    log.step(`Deleting ${stale.length} stale files`);
+    log.status(`Deleting ${count(stale.length, "stale file")}`);
     await pool(stale, 8, (path) => bucket.delete(path));
   }
 
   await purgeCache(apiKey, config.pullZoneId);
 
-  return `https://${config.domain ?? cdnHost}`;
+  logChanges("Files", [
+    ["uploaded", changed.length],
+    ["deleted", stale.length],
+    ["unchanged", files.size - changed.length],
+  ]);
+  logChanges("Edge rules", [
+    ["added", ruleChanges.added],
+    ["removed", ruleChanges.removed],
+    ["kept", ruleChanges.kept],
+  ]);
+
+  return url;
+}
+
+function logChanges(subject: string, counts: [string, number][]) {
+  const parts = counts.filter(([, n]) => n > 0).map(([verb, n]) => `${n} ${verb}`);
+  if (parts.length) log.step(`${subject}: ${parts.join(", ")}`);
+}
+
+function count(n: number, noun: string) {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+function logTarget(config: Config, zone: StorageZone, pullZone: PullZone) {
+  const domain = pullZone.Hostnames.find(
+    (h) => h.HasCertificate && h.Value.toLowerCase() === config.domain?.toLowerCase(),
+  );
+  const url = `https://${domain?.Value ?? `${pullZone.Name}.b-cdn.net`}`;
+  const replicas = config.replicationRegions.filter((region) => region !== config.region);
+  const regions = replicas.length
+    ? `${config.region}, replicated to ${replicas.join(", ")}`
+    : config.region;
+
+  log.step(`Deploying ${style("bold", config.outputDir)} to ${style("bold", url)}`);
+  log.detail(`Storage zone  ${zone.Name} (${regions})`);
+  log.detail(`Pull zone     ${pullZone.Name}`);
+  if (config.aliases.length) log.detail(`Aliases       ${config.aliases.join(", ")}`);
 }
 
 async function readOutput(dir: string, { migrated }: { migrated: boolean }) {
@@ -131,8 +171,11 @@ async function readOutput(dir: string, { migrated }: { migrated: boolean }) {
 
     // Netlify reads these files and never serves them, and _headers can hold passwords
     if (RULE_FILES.includes(path)) {
-      const hint = migrated ? "" : " Run `orbitpush migrate-netlify` to copy them there.";
-      log.warn(`${path} is not read: rules live in orbitpush.json.${hint}`);
+      log.warn(
+        migrated
+          ? `${path} is not read: its rules live in orbitpush.json.`
+          : `${path} is not read. Run \`orbitpush migrate-netlify\` to copy its rules to orbitpush.json.`,
+      );
       continue;
     }
 
@@ -171,7 +214,7 @@ async function applySettings(
     pruneHostnames,
   }: { config: Config; pullZone: PullZone; spa: boolean; has404: boolean; pruneHostnames: boolean },
 ) {
-  log.step("Applying settings");
+  log.status("Applying settings");
   await api(apiKey, {
     method: "POST",
     path: `/storagezone/${config.storageZoneId}`,
@@ -231,15 +274,11 @@ async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeRule[]) 
     const deployed = kept.get(rule.Description);
     return deployed ? { ...rule, Guid: deployed.Guid } : rule;
   });
-  if (!writes.length && !removed.length) return;
-
   const added = writes.length - kept.size;
-  const counts = [
-    style("green", `+${added}`),
-    style("yellow", `~${kept.size}`),
-    style("red", `-${removed.length}`),
-  ];
-  log.step(`Updating edge rules (${counts.join(" ")})`);
+  const changes = { added, removed: removed.length, kept: kept.size };
+  if (!writes.length && !removed.length) return changes;
+
+  log.status("Updating edge rules");
 
   const remove = async (rules: typeof removed) => {
     for (const rule of rules) {
@@ -263,4 +302,5 @@ async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeRule[]) 
   }
 
   await remove(removed.filter((r) => !first.includes(r)));
+  return changes;
 }

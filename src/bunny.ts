@@ -134,6 +134,7 @@ export async function ensureDomains(
     );
   }
 
+  let url = `https://${cdnHost}`;
   for (const domain of hostnames) {
     let hostname = pullZone.Hostnames.find((h) => h.Value.toLowerCase() === domain);
     const added = !hostname;
@@ -161,9 +162,15 @@ export async function ensureDomains(
       if (failure) {
         if (added) continue;
 
-        log.warn(
-          `No SSL certificate for ${domain} yet. Point a CNAME record to ${cdnHost} and deploy again. bunny.net: ${failure}`,
-        );
+        // bunny.net answers HTTP 400 for every failed issue, so only its message tells DNS apart
+        if (/not pointing to our servers/i.test(failure)) {
+          log.warn(
+            `DNS for ${domain} does not point to bunny.net yet. Add this record, then deploy again to enable HTTPS:`,
+          );
+          log.detail(`${domain} CNAME ${cdnHost}`);
+        } else {
+          log.warn(`No SSL certificate for ${domain} yet. bunny.net: ${failure}`);
+        }
         continue;
       }
     }
@@ -178,13 +185,15 @@ export async function ensureDomains(
         },
       });
     }
+
+    if (domain === hostnames[0]) url = `https://${domain}`;
   }
 
-  return cdnHost;
+  return url;
 }
 
 export async function purgeCache(apiKey: string, pullZoneId: number) {
-  log.step("Purging cache");
+  log.status("Purging cache");
   await api(apiKey, { method: "POST", path: `/pullzone/${pullZoneId}/purgeCache` });
 }
 

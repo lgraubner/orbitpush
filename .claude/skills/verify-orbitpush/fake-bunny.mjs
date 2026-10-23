@@ -170,7 +170,7 @@ function api(state, url, method, headers, body) {
       const hostname = url.searchParams.get("hostname");
       const zone = state.pullZones.find((z) => z.Hostnames.some((h) => h.Value === hostname));
       if (!zone || process.env.FAKE_BUNNY_CERT !== "ok") {
-        return reply(400, { Message: `DNS for ${hostname} does not point to the pull zone` });
+        return reply(400, { Message: `The domain ${hostname} is not pointing to our servers.` });
       }
 
       zone.Hostnames.find((h) => h.Value === hostname).HasCertificate = true;
