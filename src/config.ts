@@ -81,6 +81,14 @@ export function aliasProblem({ domain, aliases }: { domain?: string; aliases: st
   return repeated ? `alias ${repeated} is listed twice` : undefined;
 }
 
+export function hostnameProblem(hosts: string[]) {
+  const invalid = hosts.find((host) => !Hostname.safeParse(host).success);
+
+  return invalid === undefined
+    ? undefined
+    : `"${invalid}" is not a hostname, such as www.example.com`;
+}
+
 export type Config = z.infer<typeof ConfigSchema>;
 
 export async function readConfig(): Promise<Config> {

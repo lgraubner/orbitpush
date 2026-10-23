@@ -121,12 +121,7 @@ export async function ensureDomains(
     if (host === cdnHost.toLowerCase() || hostnames.includes(host)) continue;
 
     if (prune) {
-      log.step(`Removing hostname ${Value}`);
-      await api(apiKey, {
-        method: "DELETE",
-        path: `/pullzone/${config.pullZoneId}/removeHostname`,
-        body: { Hostname: Value },
-      });
+      await removeHostname(apiKey, config.pullZoneId, Value);
       continue;
     }
 
@@ -137,60 +132,88 @@ export async function ensureDomains(
 
   let url = `https://${cdnHost}`;
   for (const domain of hostnames) {
-    let hostname = pullZone.Hostnames.find((h) => h.Value.toLowerCase() === domain);
-    const added = !hostname;
+    const hostname = pullZone.Hostnames.find((h) => h.Value.toLowerCase() === domain);
     if (!hostname) {
-      log.step(`Adding hostname ${domain}`);
-      await api(apiKey, {
-        method: "POST",
-        path: `/pullzone/${config.pullZoneId}/addHostname`,
-        body: { Hostname: domain },
-      });
-      log.warn("Create this DNS record at your DNS provider:");
-      log.detail(`${domain} CNAME ${cdnHost}`);
-      hostname = { Value: domain, HasCertificate: false, ForceSSL: false };
+      await addHostname(apiKey, config.pullZoneId, domain);
+      logDnsRecord(domain, cdnHost, "Create this DNS record at your DNS provider:");
     }
 
-    if (!hostname.HasCertificate) {
-      const query = `hostname=${encodeURIComponent(domain)}`;
-      const failure = await api(apiKey, {
-        method: "GET",
-        path: `/pullzone/loadFreeCertificate?${query}`,
-      }).then(
-        () => undefined,
-        (error: unknown) => errorMessage(error),
+    const connection = await connectHostname(apiKey, config.pullZoneId, domain, hostname);
+    if (connection.status === "dns" && hostname) {
+      logDnsRecord(
+        domain,
+        cdnHost,
+        `DNS for ${domain} does not point to bunny.net yet. Add this record, then deploy again to enable HTTPS:`,
       );
-      if (failure) {
-        if (added) continue;
-
-        // bunny.net answers HTTP 400 for every failed issue, so only its message tells DNS apart
-        if (/not pointing to our servers/i.test(failure)) {
-          log.warn(
-            `DNS for ${domain} does not point to bunny.net yet. Add this record, then deploy again to enable HTTPS:`,
-          );
-          log.detail(`${domain} CNAME ${cdnHost}`);
-        } else {
-          log.warn(`No SSL certificate for ${domain} yet. bunny.net: ${failure}`);
-        }
-        continue;
-      }
+    } else if (connection.status === "failed" && hostname) {
+      log.warn(`No SSL certificate for ${domain} yet. bunny.net: ${connection.reason}`);
     }
 
-    if (!hostname.ForceSSL) {
-      await api(apiKey, {
-        method: "POST",
-        path: `/pullzone/${config.pullZoneId}/setForceSSL`,
-        body: {
-          Hostname: domain,
-          ForceSSL: true,
-        },
-      });
-    }
-
-    if (domain === hostnames[0]) url = `https://${domain}`;
+    if (connection.status === "connected" && domain === hostnames[0]) url = `https://${domain}`;
   }
 
   return { url, connected: url !== `https://${cdnHost}` };
+}
+
+export async function addHostname(apiKey: string, pullZoneId: number, host: string) {
+  log.step(`Adding hostname ${host}`);
+  await api(apiKey, {
+    method: "POST",
+    path: `/pullzone/${pullZoneId}/addHostname`,
+    body: { Hostname: host },
+  });
+}
+
+export async function removeHostname(apiKey: string, pullZoneId: number, host: string) {
+  log.step(`Removing hostname ${host}`);
+  await api(apiKey, {
+    method: "DELETE",
+    path: `/pullzone/${pullZoneId}/removeHostname`,
+    body: { Hostname: host },
+  });
+}
+
+export type Connection =
+  | { status: "connected" }
+  | { status: "dns" }
+  | { status: "failed"; reason: string };
+
+export async function connectHostname(
+  apiKey: string,
+  pullZoneId: number,
+  host: string,
+  hostname?: PullZone["Hostnames"][number],
+): Promise<Connection> {
+  if (!hostname?.HasCertificate) {
+    const failure = await api(apiKey, {
+      method: "GET",
+      path: `/pullzone/loadFreeCertificate?hostname=${encodeURIComponent(host)}`,
+    }).then(
+      () => undefined,
+      (error: unknown) => errorMessage(error),
+    );
+    // bunny.net answers HTTP 400 for every failed issue, so only its message tells DNS apart
+    if (failure && /not pointing to our servers/i.test(failure)) return { status: "dns" };
+    if (failure) return { status: "failed", reason: failure };
+  }
+
+  if (!hostname?.ForceSSL) {
+    await api(apiKey, {
+      method: "POST",
+      path: `/pullzone/${pullZoneId}/setForceSSL`,
+      body: { Hostname: host, ForceSSL: true },
+    });
+  }
+
+  return { status: "connected" };
+}
+
+export function logDnsRecord(host: string, cdnHost: string, message: string) {
+  log.warn(message);
+  log.detail(`${host} CNAME ${cdnHost}`);
+  if (host.split(".").length === 2) {
+    log.detail("At the root of a domain, use ALIAS, ANAME or CNAME flattening instead of CNAME.");
+  }
 }
 
 export async function purgeCache(apiKey: string, pullZoneId: number) {

@@ -54,6 +54,26 @@ In CI, set `BUNNY_API_KEY` as a secret:
     BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
 ```
 
+## `orbitpush domains`
+
+Puts the site on your own domains. Each command updates `domain` and `aliases` in `orbitpush.json` and the pull zone together, so editing the file and running `deploy` stays an alternative.
+
+```bash
+npx orbitpush domains add www.example.com            # the first domain becomes the primary domain
+npx orbitpush domains add example.com                # later ones are aliases that redirect to it
+npx orbitpush domains add example.com --primary      # make an alias the primary domain
+npx orbitpush domains remove example.com
+npx orbitpush domains list
+```
+
+`domains add` adds the hostname to the pull zone, prints the DNS record to create, and waits until the record points to bunny.net: it checks after 5, 10, 20 and 40 seconds, then every minute for up to 15 minutes. Then it gets a free SSL certificate, turns on HTTPS and writes the alias redirects. If DNS takes longer, or you stop it with Ctrl+C, run the same command again later: it continues where it stopped. Without a terminal it checks once and exits with status `1` while the domain is not connected.
+
+With `--primary`, the domain becomes the primary domain only once it is connected, and the former primary domain becomes an alias that redirects to it. Until then it stays an alias, so visitors are never sent to a domain without HTTPS.
+
+`domains remove` removes the hostname from `orbitpush.json` and the pull zone. A primary domain that still has aliases cannot be removed: remove the aliases first, or make another domain primary.
+
+`domains list` changes nothing. It shows each domain, whether it is connected, and the DNS record it still needs.
+
 ## Without a terminal (CI, scripts, agents)
 
 orbitpush asks nothing when stdin or stderr is not a terminal, or when `CI` is set to anything but `false` or `0`. Every question then has to be answered by a flag, and the API key comes from `BUNNY_API_KEY`:

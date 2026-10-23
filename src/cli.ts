@@ -8,6 +8,7 @@ import { CONFIG_FILE, readConfig } from "./config.ts";
 import { deploy } from "./deploy.ts";
 import { destroy } from "./destroy.ts";
 import { disable } from "./disable.ts";
+import { domains } from "./domains.ts";
 import { enable } from "./enable.ts";
 import { init, setUpForDeploy } from "./init.ts";
 import { errorMessage, log } from "./log.ts";
@@ -21,13 +22,18 @@ const { version } = z
 const help = `Deploy static sites to your own bunny.net account.
 
 Usage:
-  orbitpush init             Create a storage zone + pull zone and write orbitpush.json
-  orbitpush deploy           Upload the build output, sync edge rules and purge the cache
-  orbitpush disable          Block all requests to the site, keeping files and settings
-  orbitpush enable           Serve the site again after disable
-  orbitpush destroy          Delete the pull zone, storage zone and orbitpush.json
-  orbitpush migrate-netlify  Copy redirects and headers from netlify.toml, _redirects
-                             and _headers into orbitpush.json
+  orbitpush init                   Create a storage zone + pull zone and write orbitpush.json
+  orbitpush deploy                 Upload the build output, sync edge rules and purge the cache
+  orbitpush domains add <host>     Add a domain and connect it: waits for its DNS record,
+                                   then turns on HTTPS. The first one becomes the primary
+                                   domain, later ones redirect to it
+  orbitpush domains remove <host>  Remove a domain from orbitpush.json and the pull zone
+  orbitpush domains list           Show each domain and what it still needs
+  orbitpush disable                Block all requests to the site, keeping files and settings
+  orbitpush enable                 Serve the site again after disable
+  orbitpush destroy                Delete the pull zone, storage zone and orbitpush.json
+  orbitpush migrate-netlify        Copy redirects and headers from netlify.toml, _redirects
+                                   and _headers into orbitpush.json
 
 Init options (skip the matching prompt):
   --name <name>                 Storage zone and pull zone name
@@ -41,6 +47,9 @@ Init options (skip the matching prompt):
 
 Deploy options:
   --prune-hostnames             Remove hostnames from the pull zone that orbitpush.json does not list
+
+Domains add options:
+  --primary                     Make the domain the primary domain once it is connected
 
 Destroy options:
   -y, --yes                     Delete without asking to type the project name
@@ -71,6 +80,11 @@ try {
       pruneHostnames: args.flags["prune-hostnames"],
     });
     log.success(`Deployed to ${url} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  } else if (args.command === "domains") {
+    await domains(apiKeyFromEnv(), await readConfig(), args.rest, {
+      primary: args.flags.primary,
+      interactive,
+    });
   } else if (args.command === "disable") {
     await disable(apiKeyFromEnv(), await readConfig());
   } else if (args.command === "enable") {

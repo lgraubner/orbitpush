@@ -20,7 +20,7 @@ import {
   CONFIG_FILE,
   GEO_ZONES,
   GeoZone,
-  Hostname,
+  hostnameProblem,
   MISSING_CONFIG,
   Region,
   STORAGE_REGIONS,
@@ -200,14 +200,6 @@ export async function init(
   if (!deploying) log.detail("Next: build your site, then run `npx orbitpush deploy`");
 
   return { apiKey, config };
-}
-
-function hostnameProblem(hosts: string[]) {
-  const invalid = hosts.find((host) => !Hostname.safeParse(host).success);
-
-  return invalid === undefined
-    ? undefined
-    : `"${invalid}" is not a hostname, such as www.example.com`;
 }
 
 function listFlag(flag: string | string[] | undefined) {

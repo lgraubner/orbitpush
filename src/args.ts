@@ -8,6 +8,7 @@ const Argv = z.object({
   version: z.optional(z.boolean()),
   yes: z.optional(z.boolean()),
   "prune-hostnames": z.optional(z.boolean()),
+  primary: z.optional(z.boolean()),
   name: z.optional(z.string()),
   dir: z.optional(z.string()),
   region: z.optional(z.string()),
@@ -18,7 +19,7 @@ const Argv = z.object({
 });
 
 const OPTIONS = {
-  boolean: ["help", "version", "yes", "prune-hostnames"],
+  boolean: ["help", "version", "yes", "prune-hostnames", "primary"],
   string: ["name", "dir", "domain", "alias", "region", "replication-region", "delivery-region"],
   alias: { h: "help", v: "version", y: "yes" },
 };
@@ -39,7 +40,7 @@ export function parseArgs(argv: string[]) {
   }
 
   const { _: positionals, help, version, ...flags } = result.data;
-  const [command] = positionals.map(String);
+  const [command, ...rest] = positionals.map(String);
 
-  return { command, help, version, flags };
+  return { command, rest, help, version, flags };
 }
