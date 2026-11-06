@@ -13,7 +13,7 @@ for (const s of Object.values(sites)) {
     test.afterAll(() => s.cleanup());
 
     if (s === sites.multiPage) {
-      test("redeploy uploads changes, deletes removed files and rules, purges", async () => {
+      test("redeploy uploads changes, keeps removed files as stale, deletes removed rules, purges", async () => {
         const pub = join(s.dir, "public");
         const index = join(pub, "index.html");
         const html = await readFile(index, "utf8");
@@ -23,8 +23,12 @@ for (const s of Object.values(sites)) {
         const json: object = JSON.parse(await readFile(config, "utf8"));
         await writeFile(config, JSON.stringify({ ...json, headers: [] }));
 
-        expect((await s.cli("deploy")).code).toBe(0);
-        await untilStatus(s, `${s.cdnUrl}/contact.html`, 404);
+        const result = await s.cli("deploy");
+        expect(result.code).toBe(0);
+        expect(result.stderr).toMatch(/Files: .*1 kept/);
+        expect(await s.status(`${s.cdnUrl}/contact.html`)).toBe(200);
+        const record: unknown = JSON.parse((await s.get(`${s.cdnUrl}/.orbitpush/stale.json`)).body);
+        expect(record).toMatchObject({ version: 1, stale: { "contact.html": expect.any(String) } });
 
         await expect
           .poll(async () => (await s.get(`${s.cdnUrl}/`)).headers["x-e2e-block"], {

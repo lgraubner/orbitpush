@@ -64,7 +64,7 @@ export async function deploy(
   const changed = [...files].filter(
     ([path, file]) => remote.get(path)?.toUpperCase() !== file.checksum,
   );
-  const { expired, kept } = sortStale(
+  const { expired, kept } = partitionStale(
     [...remote.keys()].filter((path) => !files.has(path) && !path.startsWith(ORBITPUSH_DIR)),
     record,
     new Date(),
@@ -223,7 +223,7 @@ async function readOutput(dir: string, { migrated }: { migrated: boolean }) {
   return files;
 }
 
-function sortStale(paths: string[], record: StaleRecord | undefined, now: Date) {
+function partitionStale(paths: string[], record: StaleRecord | undefined, now: Date) {
   const expired: string[] = [];
   const kept = new Map<string, string>();
   for (const path of [...paths].sort()) {
