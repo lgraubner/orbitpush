@@ -1,25 +1,23 @@
 # TypeScript patterns
 
-Code examples for the rules in `SKILL.md` and `.claude/principles/types-and-boundaries.md`.
+Code examples for the rules in `SKILL.md` and the Types and Boundaries sections of `CLAUDE.md`.
 
 ## Branded types
 
-Brand primitives so they can't be mixed up. Validate once at the boundary. Downstream code trusts the type.
+Brand primitives so they can't be mixed up. The zod schema brands the value where it enters; downstream code trusts the type.
 
 ```ts
-type AgentId = string & { readonly __brand: "AgentId" };
+import { z } from "@/zod.ts";
 
-function parseAgentId(input: string): AgentId {
-  if (!isUUID(input)) throw new Error(`Invalid agent id: ${input}`);
-  return input as AgentId;
-}
+const agentIdSchema = z.uuid().brand<"AgentId">();
+type AgentId = z.infer<typeof agentIdSchema>;
 
 function focusAgent(id: AgentId): void {
   /* input is trusted */
 }
-```
 
-Match the `readonly __brand: "X"` shape. Brand only where two values of the same primitive type can be swapped.
+focusAgent(agentIdSchema.parse(params.agentId));
+```
 
 ## Discriminated unions
 
@@ -107,61 +105,15 @@ function newestSession(sessions: NonEmpty<Session>): Session {
 
 Weakening the result to `Session | undefined` is the other total signature.
 
-## `unknown` over `any`
-
-External data is always `unknown`. Narrow before use.
-
-```ts
-// Don't
-function handle(input: any) {
-  return input.foo.bar;
-}
-
-// Do
-function handle(input: unknown) {
-  if (typeof input === "object" && input !== null && "foo" in input) {
-    // narrowed; compiler verifies access
-  }
-}
-```
-
-External sources include RPC payloads, `JSON.parse`, `postMessage`, IPC, file contents, environment variables, database results.
-
-## Schemas before hand-rolled guards
-
-Before writing a property-by-property type guard for external data, look for the repository's runtime schema library and existing schemas. Let one schema own validation and derive the TypeScript type from it. Do not maintain a schema, a duplicate interface, and a guard that can drift apart.
-
-```ts
-import { z } from "zod";
-
-const UserSchema = z.object({
-  id: z.string().uuid(),
-  role: z.enum(["admin", "member"]),
-});
-
-type User = z.infer<typeof UserSchema>;
-
-function parseUser(input: unknown): User {
-  return UserSchema.parse(input);
-}
-```
-
-Use `safeParse` when failure is an expected branch. Use the equivalent inference helper when the repository uses another schema library. Do not add a new schema dependency for one guard. This rule prefers the schema system the codebase already trusts.
-
 ## No `as` casts
 
-Every `as` is a potential runtime crash. Cast only after the type system has verified the claim.
+The rules live in the Boundaries section of `CLAUDE.md` and in Parsing of `.claude/rules/typescript.md`: parse with the schema, and the type comes from it.
 
 ```ts
-import { z } from "zod";
+import { z } from "@/zod.ts";
 
 // Don't
 const user = data as User;
-
-// Don't
-function isUser(data: unknown): data is User {
-  return typeof data === "object" && data !== null && "id" in data;
-}
 
 // Do
 const userSchema = z.object({ id: z.string(), name: z.string() });
@@ -172,12 +124,14 @@ function parseUser(data: unknown): User {
 }
 ```
 
+Use `safeParse` when failure is an expected branch.
+
 When the type comes first, annotate the validator with the type it proves. The compiler then rejects a validator that proves less than the type. Remove `name` from the object below and the assignment fails to compile.
 
 ```ts
 type User = { id: string; name: string };
 
-const userSchema: z.ZodType<User> = z.object({
+const userSchema: z.ZodMiniType<User> = z.object({
   id: z.string(),
   name: z.string(),
 });
@@ -213,15 +167,22 @@ function area(s: LegacyShape): number {
 
 ## Type guards
 
-A guard must actually verify the claim. A lying guard is worse than `as`.
+A guard narrows a value already inside the boundary; external data takes its schema (No `as` casts). The body checks everything the signature claims.
 
 ```ts
-function isCircle(s: Shape): s is Shape & { kind: "circle" } {
-  return s.kind === "circle";
+type Task = { id: TaskId; assignee?: User };
+type AssignedTask = Task & { assignee: User };
+
+// Don't: claims a whole AssignedTask, checks a key that may hold undefined
+function isAssigned(task: Task): task is AssignedTask {
+  return "assignee" in task;
+}
+
+// Do: checks exactly the claim
+function isAssigned(task: Task): task is AssignedTask {
+  return task.assignee !== undefined;
 }
 ```
-
-Prefer discriminant narrowing when possible.
 
 ## `satisfies` over `as`
 
@@ -238,7 +199,7 @@ const config = { theme: "dark", cols: 3 } satisfies Config;
 
 ## Boundary validation
 
-The rules live in `.claude/principles/types-and-boundaries.md`. Format specifics:
+The rules live in the Boundaries section of `CLAUDE.md`. Format specifics:
 
 - **Wire formats** (JSON, protobuf): accept unknown fields so a newer sender doesn't break an older reader. Zod objects strip unknown keys by default; protobuf-es `fromJson` needs `ignoreUnknownFields: true`.
 - **Persisted JSON:** versioned blob with a try/catch around the parse.

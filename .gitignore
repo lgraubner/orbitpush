@@ -2,3 +2,4 @@ node_modules
 dist
 .verify-artifacts
 /e2e/test-results
+.claude/worktrees/

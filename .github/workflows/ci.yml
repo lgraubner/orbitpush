@@ -1,34 +1,92 @@
 name: CI
 
 on:
+    push:
+        branches: [main]
     pull_request:
 
 permissions:
     contents: read
 
 concurrency:
-    group: ci-${{ github.ref }}
-    cancel-in-progress: true
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# The steps run the scripts that the gate (`npm run check`) chains, so CI and the local gate agree.
+# After install, every check runs even when an earlier one failed, to report all failures at once.
 jobs:
-    check:
+    checks:
+        name: Checks (Node ${{ matrix.node-version }})
         runs-on: ubuntu-24.04
+        timeout-minutes: 10
         strategy:
+            fail-fast: false
             matrix:
                 # The lowest supported Node.js from engines in package.json, and the current LTS
                 node-version: [22, 24]
-
         steps:
             - uses: actions/checkout@v7
-
+              with:
+                  persist-credentials: false
             - uses: actions/setup-node@v7
               with:
                   node-version: ${{ matrix.node-version }}
                   cache: npm
-
-            - run: npm ci
-
-            - run: npm run check
-
+            - id: install
+              run: npm ci
+            - name: Format
+              if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+              run: npm run format:check
+            - name: Lint
+              if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+              run: npm run lint
+            - name: Type-check
+              if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+              run: npm run typecheck
+            - name: Unit tests
+              if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+              run: npm test
+            - id: build
+              name: Build
+              if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+              run: npm run build
             - name: Run the bundle
+              if: ${{ !cancelled() && steps.build.outcome == 'success' }}
               run: node dist/cli.js --help
+
+    publish:
+        name: Publish
+        needs: checks
+        if: ${{ github.event_name == 'push' }}
+        runs-on: ubuntu-24.04
+        timeout-minutes: 10
+        concurrency:
+            group: publish
+            cancel-in-progress: false
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+                  cache: npm
+                  registry-url: https://registry.npmjs.org
+            - run: npm ci
+            - name: Check whether this version is published
+              id: version
+              run: |
+                  version=$(node -p "require('./package.json').version")
+                  echo "version=$version" >> "$GITHUB_OUTPUT"
+                  if npm view "orbitpush@$version" version > /dev/null 2>&1; then
+                    echo "published=true" >> "$GITHUB_OUTPUT"
+                    echo "orbitpush@$version is already on npm, nothing to publish"
+                  else
+                    echo "published=false" >> "$GITHUB_OUTPUT"
+                  fi
+            # prepack type-checks and builds dist/cli.js
+            - name: Publish
+              if: steps.version.outputs.published == 'false'
+              run: npm publish
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

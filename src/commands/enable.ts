@@ -1,7 +1,7 @@
-import { api, getPullZone, purgeCache } from "./bunny.ts";
-import type { Config } from "./config.ts";
-import { log } from "./log.ts";
-import { DISABLED_RULE } from "./rules.ts";
+import { api, getPullZone, purgeCache } from "@/bunny.ts";
+import type { Config } from "@/config.ts";
+import { log } from "@/log.ts";
+import { DISABLED_RULE } from "@/rules.ts";
 
 export async function enable(apiKey: string, config: Config) {
   const pullZone = await getPullZone(apiKey, config.pullZoneId);

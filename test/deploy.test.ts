@@ -7,7 +7,7 @@ import { stripVTControlCharacters } from "node:util";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { Config, Redirect } from "../src/config.ts";
-import { deploy } from "../src/deploy.ts";
+import { deploy } from "../src/commands/deploy.ts";
 import { domainRules, isAliasRule, redirectRules, trailingSlashRule } from "../src/rules.ts";
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex").toUpperCase();

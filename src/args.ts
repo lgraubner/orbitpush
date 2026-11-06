@@ -1,6 +1,6 @@
 import mri from "mri";
 
-import { issues, z } from "./zod.ts";
+import { issues, z } from "@/zod.ts";
 
 const Argv = z.object({
   _: z.array(z.union([z.string(), z.number()])),

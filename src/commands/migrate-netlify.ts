@@ -2,11 +2,11 @@ import { join } from "node:path";
 
 import { parse as parseToml } from "smol-toml";
 
-import { CONFIG_FILE, type Header, type Redirect, readConfig, writeConfig } from "./config.ts";
-import { readIfExists } from "./files.ts";
-import { errorMessage, log } from "./log.ts";
-import { headerRules, redirectRules } from "./rules.ts";
-import { issues, z } from "./zod.ts";
+import { CONFIG_FILE, type Header, type Redirect, readConfig, writeConfig } from "@/config.ts";
+import { readIfExists } from "@/files.ts";
+import { errorMessage, log } from "@/log.ts";
+import { headerRules, redirectRules } from "@/rules.ts";
+import { issues, z } from "@/zod.ts";
 
 const NETLIFY_TOML = "netlify.toml";
 

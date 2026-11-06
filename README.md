@@ -307,14 +307,15 @@ npm install            # also installs the lefthook git hooks
 npm test               # vitest, no network
 npm run format         # oxfmt
 npm run lint           # oxlint with type-aware rules
-npm run build          # type-checks and bundles everything into dist/cli.js (no runtime dependencies)
-npm run check          # format check, lint, build and tests: must pass before a change is done
+npm run typecheck      # tsc
+npm run build          # bundles everything into dist/cli.js (no runtime dependencies)
+npm run check          # format check, lint, type-check, tests and build: must pass before a change is done
 npm run test:e2e       # Playwright against real bunny.net, see below
 ```
 
 `npm run test:e2e` deploys each demo site in `e2e/sites/` to the bunny.net account of `BUNNY_API_KEY`, tests it in Chromium, then disables, enables and destroys it. It creates real zones named `orbitpush-e2e-<site>-<run>`; if a run is killed, delete leftovers in the dashboard. Set `E2E_COUNTRY` to the two-letter code of where you run it (`E2E_COUNTRY=de`) to also test a matching `Country=` redirect. Custom hostnames under `E2E_DOMAIN` need no DNS records: requests to them connect to `<name>.b-cdn.net`, so SSL certificates are not tested.
 
-Dependencies are pinned to exact versions. Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`type(scope): subject`); a lefthook `commit-msg` hook runs commitlint and rejects other messages.
+Dependencies are pinned to exact versions. Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`type(scope): subject`); a lefthook `commit-msg` hook runs commitlint and rejects other messages, and a `pre-commit` hook formats the staged files. CI runs the same checks on pull requests and `main`, checks the commit messages and pull request title, and publishes to npm from `main` when `package.json` holds a new version.
 
 ## License
 

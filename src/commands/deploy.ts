@@ -19,11 +19,11 @@ import {
   StorageZone,
   storage,
   syncRules,
-} from "./bunny.ts";
-import type { Config } from "./config.ts";
-import { isMissing } from "./files.ts";
-import { log, style } from "./log.ts";
-import { managedRules } from "./rules.ts";
+} from "@/bunny.ts";
+import type { Config } from "@/config.ts";
+import { isMissing } from "@/files.ts";
+import { log, style } from "@/log.ts";
+import { managedRules } from "@/rules.ts";
 
 const RULE_FILES = ["_headers", "_redirects"];
 
@@ -87,6 +87,7 @@ export async function deploy(
       `${config.aliases.join(", ")} will redirect to ${config.domain} once it has HTTPS. Run \`orbitpush domains add ${config.domain}\` to finish it.`,
     );
   }
+
   const ruleChanges = await syncRules(
     apiKey,
     pullZone,

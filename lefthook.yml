@@ -1,4 +1,11 @@
+pre-commit:
+    jobs:
+        - name: format
+          glob: "*.{ts,tsx,js,mjs,json,css,html,md,yml,yaml}"
+          run: node_modules/.bin/oxfmt --no-error-on-unmatched-pattern {staged_files}
+          stage_fixed: true
+
 commit-msg:
-    commands:
-        commitlint:
-            run: npx --no -- commitlint --edit {1}
+    jobs:
+        - name: commitlint
+          run: node_modules/.bin/commitlint --edit {1}

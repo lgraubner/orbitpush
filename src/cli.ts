@@ -2,18 +2,18 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 
-import { parseArgs } from "./args.ts";
-import { apiKeyFromEnv } from "./bunny.ts";
-import { CONFIG_FILE, readConfig } from "./config.ts";
-import { deploy } from "./deploy.ts";
-import { destroy } from "./destroy.ts";
-import { disable } from "./disable.ts";
-import { Cancelled, domains } from "./domains.ts";
-import { enable } from "./enable.ts";
-import { init, setUpForDeploy } from "./init.ts";
-import { errorMessage, log } from "./log.ts";
-import { migrateNetlify } from "./migrate-netlify.ts";
-import { z } from "./zod.ts";
+import { parseArgs } from "@/args.ts";
+import { apiKeyFromEnv } from "@/bunny.ts";
+import { CONFIG_FILE, readConfig } from "@/config.ts";
+import { deploy } from "@/commands/deploy.ts";
+import { destroy } from "@/commands/destroy.ts";
+import { disable } from "@/commands/disable.ts";
+import { Cancelled, domains } from "@/commands/domains.ts";
+import { enable } from "@/commands/enable.ts";
+import { init, setUpForDeploy } from "@/commands/init.ts";
+import { errorMessage, log } from "@/log.ts";
+import { migrateNetlify } from "@/commands/migrate-netlify.ts";
+import { z } from "@/zod.ts";
 
 const { version } = z
   .object({ version: z.string() })

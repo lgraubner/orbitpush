@@ -1,8 +1,8 @@
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { Config } from "../src/config.ts";
-import { disable } from "../src/disable.ts";
-import { enable } from "../src/enable.ts";
+import { disable } from "../src/commands/disable.ts";
+import { enable } from "../src/commands/enable.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();

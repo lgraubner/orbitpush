@@ -2,9 +2,9 @@ import { rm } from "node:fs/promises";
 
 import { input } from "@inquirer/prompts";
 
-import { api, ApiError } from "./bunny.ts";
-import { type Config, CONFIG_FILE } from "./config.ts";
-import { log } from "./log.ts";
+import { api, ApiError } from "@/bunny.ts";
+import { type Config, CONFIG_FILE } from "@/config.ts";
+import { log } from "@/log.ts";
 
 export async function destroy(
   apiKey: string,

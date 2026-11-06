@@ -6,7 +6,7 @@ import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { type Config, readConfig, writeConfig } from "../src/config.ts";
-import { Cancelled, domains } from "../src/domains.ts";
+import { Cancelled, domains } from "../src/commands/domains.ts";
 import { domainRules, isAliasRule } from "../src/rules.ts";
 
 const cwd = process.cwd();

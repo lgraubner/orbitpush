@@ -9,7 +9,10 @@
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
-  "include": ["src", "test", "e2e"]
+  "include": ["src", "test", "e2e", "vitest.config.ts"]
 }

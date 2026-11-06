@@ -9,7 +9,7 @@ import {
   parseHeadersFile,
   parseNetlifyToml,
   parseRedirectsFile,
-} from "../src/migrate-netlify.ts";
+} from "../src/commands/migrate-netlify.ts";
 import { headerRules, redirectRules } from "../src/rules.ts";
 
 const cwd = process.cwd();

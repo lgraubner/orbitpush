@@ -1,7 +1,7 @@
-import { type Config, CONFIG_FILE, GEO_ZONES, type GeoZone } from "./config.ts";
-import { errorMessage, log } from "./log.ts";
-import { DISABLED_RULE, type EdgeRule, isAliasRule, isManaged, MAX_EDGE_RULES } from "./rules.ts";
-import { issues, z } from "./zod.ts";
+import { type Config, CONFIG_FILE, GEO_ZONES, type GeoZone } from "@/config.ts";
+import { errorMessage, log } from "@/log.ts";
+import { DISABLED_RULE, type EdgeRule, isAliasRule, isManaged, MAX_EDGE_RULES } from "@/rules.ts";
+import { issues, z } from "@/zod.ts";
 
 export const API_KEY_URL = "https://dash.bunny.net/account/api-key";
 

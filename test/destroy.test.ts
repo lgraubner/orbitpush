@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { Config } from "../src/config.ts";
-import { destroy } from "../src/destroy.ts";
+import { destroy } from "../src/commands/destroy.ts";
 
 const cwd = process.cwd();
 

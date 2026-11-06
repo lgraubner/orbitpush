@@ -1,8 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 
-import { isMissing } from "./files.ts";
-import { errorMessage } from "./log.ts";
-import { issues, z } from "./zod.ts";
+import { isMissing } from "@/files.ts";
+import { errorMessage } from "@/log.ts";
+import { issues, z } from "@/zod.ts";
 
 export const CONFIG_FILE = "orbitpush.json";
 export const SCHEMA_URL = "https://unpkg.com/orbitpush/schema.json";

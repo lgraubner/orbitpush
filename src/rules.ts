@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
-import type { Config, Header, Redirect } from "./config.ts";
-import { errorMessage } from "./log.ts";
+import type { Config, Header, Redirect } from "@/config.ts";
+import { errorMessage } from "@/log.ts";
 
 // Bunny edge rule enums: https://docs.bunny.net/api-reference/core/pull-zone/addupdate-edge-rule
 const REDIRECT = 1;
@@ -310,6 +310,7 @@ export function redirectRules(redirects: Redirect[]): Parsed & { spa: boolean } 
           }),
         );
       }
+
       if (served !== status) {
         warnings.push(`redirects.${i} status ${status} is sent as ${served}: ${from} ${to}`);
       }

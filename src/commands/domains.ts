@@ -11,10 +11,10 @@ import {
   type PullZone,
   removeHostname,
   syncRules,
-} from "./bunny.ts";
-import { aliasProblem, type Config, CONFIG_FILE, hostnameProblem, writeConfig } from "./config.ts";
-import { log } from "./log.ts";
-import { managedRules } from "./rules.ts";
+} from "@/bunny.ts";
+import { aliasProblem, type Config, CONFIG_FILE, hostnameProblem, writeConfig } from "@/config.ts";
+import { log } from "@/log.ts";
+import { managedRules } from "@/rules.ts";
 
 const WAIT_MS = 15 * 60_000;
 const RECHECK_SECONDS = [5, 10, 20, 40, 60];
@@ -98,13 +98,25 @@ async function addDomain(apiKey: string, config: Config, host: string, options: 
   const aliasRedirects = host === domain || isConnected(pullZone, domain);
   await applyRules(apiKey, config, pullZone, { aliasRedirects });
 
+  logAdded(host, config, { domain, previousPrimary: primary, aliasRedirects });
+}
+
+function logAdded(
+  host: string,
+  config: Config,
+  {
+    domain,
+    previousPrimary,
+    aliasRedirects,
+  }: { domain: string | undefined; previousPrimary: string | undefined; aliasRedirects: boolean },
+) {
   if (host !== domain && !aliasRedirects) {
     log.warn(
       `${host} is connected and will redirect to ${config.domain} once it has HTTPS. Run \`orbitpush domains add ${config.domain}\` to finish it.`,
     );
   } else if (host !== domain) {
     log.success(`${host} is connected and redirects to ${config.domain}`);
-  } else if (primary && primary !== host) {
+  } else if (previousPrimary && previousPrimary !== host) {
     const verb = config.aliases.length === 1 ? "redirects" : "redirect";
     log.success(`${host} is now the primary domain. ${config.aliases.join(", ")} ${verb} to it.`);
   } else {

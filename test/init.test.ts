@@ -6,7 +6,7 @@ import { stripVTControlCharacters } from "node:util";
 
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { init } from "../src/init.ts";
+import { init } from "../src/commands/init.ts";
 
 type Prompt = {
   message: string;

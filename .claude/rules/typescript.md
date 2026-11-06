@@ -14,4 +14,13 @@ oxfmt never adds blank lines, so write function bodies in **paragraphs**, one pe
 
 ## Comments
 
-A one-line comment uses `//` and starts with a capital letter. Holding a single sentence, it ends without a full stop; with several sentences, each ends with one. `/**` opens only a multi-line docblock, with `/**` and `*/` on lines of their own and `*` leading each line between.
+A one-line comment uses `//` and starts with a capital letter. `/**` opens only a multi-line docblock, with `/**` and `*/` on lines of their own and `*` leading each line between.
+
+## Parsing
+
+Every parser is a [zod](https://zod.dev) schema, and the type comes from it with `z.infer`, so the schema and the type cannot drift. Only a grammar for free-form text, such as `_redirects` and `_headers`, keeps a hand-written parser. Import `z` from `@/zod.ts`, which re-exports `zod/mini` with English error messages: wrap with functions (`z.optional(z.string())`, `z._default()`) instead of the chained methods of full `zod`.
+
+## Tests
+
+- Prefer static imports and `vi.spyOn` for small mocks.
+- Use `vi.mock` only for module replacement or import-time side effects. Do not combine it with `vi.importActual`.

@@ -13,7 +13,7 @@ import {
   envApiKey,
   geoZoneFlags,
   getPullZone,
-} from "./bunny.ts";
+} from "@/bunny.ts";
 import {
   aliasProblem,
   type Config,
@@ -25,8 +25,8 @@ import {
   Region,
   STORAGE_REGIONS,
   writeConfig,
-} from "./config.ts";
-import { errorMessage, log } from "./log.ts";
+} from "@/config.ts";
+import { errorMessage, log } from "@/log.ts";
 
 export type InitFlags = {
   name?: string;
@@ -92,13 +92,7 @@ export async function init(
         !deploying || existsSync(v) || `${v} not found. Build the site, then run deploy again`,
     }),
   );
-  const domain = flags.domain?.trim() || undefined;
-  const domainProblem = hostnameProblem(domain ? [domain] : []);
-  if (domainProblem) throw new Error(`Invalid --domain: ${domainProblem}`);
-
-  const aliases = listFlag(flags.alias) ?? [];
-  const problem = hostnameProblem(aliases) ?? aliasProblem({ domain, aliases });
-  if (problem) throw new Error(`Invalid --alias: ${problem}`);
+  const { domain, aliases } = domainFlags(flags);
 
   const regionAnswer = await ask(flags.region, "DE", () =>
     select({ message: "Main storage region", choices: STORAGE_REGIONS, default: "DE" }),
@@ -193,6 +187,18 @@ export async function init(
   }
 
   return { apiKey, config };
+}
+
+function domainFlags(flags: InitFlags) {
+  const domain = flags.domain?.trim() || undefined;
+  const domainProblem = hostnameProblem(domain ? [domain] : []);
+  if (domainProblem) throw new Error(`Invalid --domain: ${domainProblem}`);
+
+  const aliases = listFlag(flags.alias) ?? [];
+  const problem = hostnameProblem(aliases) ?? aliasProblem({ domain, aliases });
+  if (problem) throw new Error(`Invalid --alias: ${problem}`);
+
+  return { domain, aliases };
 }
 
 function listFlag(flag: string | string[] | undefined) {

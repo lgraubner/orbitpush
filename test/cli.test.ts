@@ -2,10 +2,12 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { expect, test } from "vitest";
 
 const entry = resolve("src/cli.ts");
+process.env.NODE_OPTIONS = `--import=${pathToFileURL(resolve("test/alias.ts")).href}`;
 
 function cli(...args: string[]) {
   const cwd = mkdtempSync(join(tmpdir(), "orbitpush-cli-"));
