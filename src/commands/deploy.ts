@@ -16,6 +16,8 @@ import {
   pool,
   purgeCache,
   type PullZone,
+  STALE_RECORD,
+  StaleRecord,
   StorageZone,
   storage,
   syncRules,
@@ -26,6 +28,7 @@ import { count, log, style } from "@/log.ts";
 import { managedRules } from "@/rules.ts";
 
 const RULE_FILES = ["_headers", "_redirects"];
+const STALE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export async function deploy(
   apiKey: string,
@@ -53,11 +56,18 @@ export async function deploy(
 
   log.status("Comparing with storage zone");
   const bucket = storage(zone);
-  const remote = await bucket.list();
+  const [remote, record] = await Promise.all([
+    bucket.list(),
+    bucket.read(STALE_RECORD, StaleRecord),
+  ]);
   const changed = [...files].filter(
     ([path, file]) => remote.get(path)?.toUpperCase() !== file.checksum,
   );
-  const stale = [...remote.keys()].filter((path) => !files.has(path));
+  const { expired, kept } = sortStale(
+    [...remote.keys()].filter((path) => !files.has(path) && !path.startsWith(".orbitpush/")),
+    record,
+    new Date(),
+  );
 
   let uploaded = 0;
   const upload = async ([path, file]: (typeof changed)[number]) => {
@@ -94,16 +104,26 @@ export async function deploy(
     managedRules(config, { aliasRedirects: connected }).rules,
   );
 
-  if (stale.length) {
-    log.status(`Deleting ${count(stale.length, "stale file")}`);
-    await pool(stale, 8, (path) => bucket.delete(path));
+  if (expired.length) {
+    log.status(`Deleting ${count(expired.length, "stale file")}`);
+    await pool(expired, 8, (path) => bucket.delete(path));
+  }
+
+  const nextRecord = JSON.stringify({ version: 1, stale: kept } satisfies StaleRecord);
+  if (nextRecord !== JSON.stringify(record ?? { version: 1, stale: {} })) {
+    await bucket.put({
+      path: STALE_RECORD,
+      data: new Blob([nextRecord], { type: "application/json" }),
+      checksum: createHash("sha256").update(nextRecord).digest("hex"),
+    });
   }
 
   await purgeCache(apiKey, config.pullZoneId);
 
   logChanges("Files", [
     ["uploaded", changed.length],
-    ["deleted", stale.length],
+    ["kept", Object.keys(kept).length],
+    ["deleted", expired.length],
     ["unchanged", files.size - changed.length],
   ]);
   logChanges("Edge rules", [
@@ -193,6 +213,18 @@ async function readOutput(dir: string, { migrated }: { migrated: boolean }) {
   }
 
   return files;
+}
+
+function sortStale(paths: string[], record: StaleRecord | undefined, now: Date) {
+  const expired: string[] = [];
+  const kept: Record<string, string> = {};
+  for (const path of [...paths].sort()) {
+    const since = record?.stale[path] ?? now.toISOString();
+    if (now.getTime() - Date.parse(since) > STALE_GRACE_MS) expired.push(path);
+    else kept[path] = since;
+  }
+
+  return { expired, kept };
 }
 
 function isHtml(path: string) {

@@ -44,7 +44,27 @@ if (process.argv[2] === "summary") {
   };
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
 } else {
+  installClock();
   installFetch();
+}
+
+function installClock() {
+  const now = process.env.FAKE_BUNNY_NOW;
+  if (!now) return;
+
+  const offset = Date.parse(now) - Date.now();
+  if (Number.isNaN(offset)) throw new Error(`fake-bunny: FAKE_BUNNY_NOW is not a date: ${now}`);
+
+  const RealDate = Date;
+  globalThis.Date = class extends RealDate {
+    constructor(...args) {
+      super(...(args.length ? args : [RealDate.now() + offset]));
+    }
+
+    static now() {
+      return RealDate.now() + offset;
+    }
+  };
 }
 
 function installFetch() {
@@ -81,6 +101,8 @@ function installFetch() {
           : undefined,
     });
     writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+
+    if (response.raw) return new Response(response.raw, { status: response.status });
 
     return new Response(response.body === undefined ? null : JSON.stringify(response.body), {
       status: response.status,
@@ -250,7 +272,7 @@ function storage(state, url, method, headers, body) {
       return reply(400, { Message: "Checksum mismatch" });
     }
 
-    zone.files[path] = { Checksum: checksum, Length: body.length };
+    zone.files[path] = { Checksum: checksum, Length: body.length, Body: body.toString("base64") };
     return reply(201);
   }
 
@@ -276,6 +298,11 @@ function storage(state, url, method, headers, body) {
     }
 
     return reply(200, [...entries.values()]);
+  }
+
+  const file = zone.files[path];
+  if (method === "GET" && file?.Body !== undefined) {
+    return { status: 200, raw: Buffer.from(file.Body, "base64") };
   }
 
   return reply(404, { Message: "Object not found" });

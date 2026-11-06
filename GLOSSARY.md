@@ -47,7 +47,11 @@ A pull zone with the edge rule `orbitpush disabled`, which blocks every request.
 _Avoid_: paused, suspended
 
 **Stale file**:
-A file in the storage zone that is no longer in the output directory. Deleted after the upload, not before.
+A file in the storage zone that is no longer in the output directory. Deleted by the first deploy at least 7 days after it went stale, after the upload and the edge rule sync. Files under `.orbitpush/` are never stale.
+
+**Stale record**:
+The file `.orbitpush/stale.json` in the storage zone, mapping each stale file to the time a deploy first found it stale. Deploy reads it with the storage listing and rewrites it after deleting the expired stale files.
+_Avoid_: manifest
 
 **Replication region**:
 An extra storage region that mirrors the storage zone. bunny.net can add them but not remove them.
