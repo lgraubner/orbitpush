@@ -93,14 +93,31 @@ test("destroy counts a storage zone that is already gone as deleted", async () =
   expect(existsSync("orbitpush.json")).toBe(false);
 });
 
-test("destroy rerun after both zones are gone sends no delete and removes orbitpush.json", async () => {
+test("destroy rerun after both zones are gone sends no delete, removes orbitpush.json and names the storage zone to check", async () => {
   const { requests } = fakeBunny({ status: { [getPullZone]: 404 } });
 
   await destroy("key", config, { yes: true, interactive: false });
 
   expect(requests).toEqual([getPullZone]);
   expect(existsSync("orbitpush.json")).toBe(false);
+  expect(stderr()).toMatch(/storage zone named site is left/);
 });
+
+test("destroy does not warn about a leftover storage zone when it deleted it", async () => {
+  fakeBunny();
+
+  await destroy("key", config, { yes: true, interactive: false });
+
+  expect(stderr()).not.toMatch(/is left/);
+  expect(stderr()).toMatch(/Deleted site/);
+});
+
+function stderr() {
+  return vi
+    .mocked(process.stderr.write)
+    .mock.calls.map(([chunk]) => String(chunk))
+    .join("");
+}
 
 test("destroy stops and keeps orbitpush.json when the pull zone cannot be read", async () => {
   const { requests } = fakeBunny({ status: { [getPullZone]: 500 } });

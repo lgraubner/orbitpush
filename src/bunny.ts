@@ -26,7 +26,10 @@ export const PullZone = z.pipe(
   }),
   z.transform(({ OriginType, StorageZoneId, ...zone }) => ({
     ...zone,
-    storageZoneId: OriginType === STORAGE_ZONE_ORIGIN ? (StorageZoneId ?? undefined) : undefined,
+    origin:
+      OriginType === STORAGE_ZONE_ORIGIN && StorageZoneId !== null
+        ? { type: "storage" as const, storageZoneId: StorageZoneId }
+        : { type: "other" as const },
   })),
 );
 
@@ -137,13 +140,13 @@ export function getPullZone(apiKey: string, pullZoneId: number) {
 }
 
 export function storageZoneId(pullZone: PullZone) {
-  if (pullZone.storageZoneId === undefined) {
+  if (pullZone.origin.type !== "storage") {
     throw new Error(
       `Pull zone ${pullZone.Name} (${pullZone.Id}) does not serve a storage zone, so it was not set up by orbitpush. Check pullZoneId in ${CONFIG_FILE}.`,
     );
   }
 
-  return pullZone.storageZoneId;
+  return pullZone.origin.storageZoneId;
 }
 
 export function getStorageZone(apiKey: string, pullZone: PullZone) {

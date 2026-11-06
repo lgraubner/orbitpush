@@ -149,7 +149,7 @@ It does not copy `Basic-Auth` headers, which hold passwords, or redirects withou
 
 ## `orbitpush destroy`
 
-Deletes the storage zone that the pull zone serves, with every file in it, then the pull zone (with its hostnames and certificates), then `orbitpush.json`. It asks you to type the project name first; `--yes` skips that and is required without a terminal. A zone that is already gone counts as deleted, so if `destroy` stops halfway, run it again. DNS records you created for your domains are not managed by orbitpush; remove them at your DNS provider.
+Deletes the storage zone that the pull zone serves, with every file in it, then the pull zone (with its hostnames and certificates), then `orbitpush.json`. It asks you to type the project name first; `--yes` skips that and is required without a terminal. A zone that is already gone counts as deleted, so if `destroy` stops halfway, run it again. `destroy` finds the storage zone through the pull zone, so when the pull zone is already gone, it warns you to check the dashboard for a storage zone with the project name. DNS records you created for your domains are not managed by orbitpush; remove them at your DNS provider.
 
 ## Redirects and headers
 

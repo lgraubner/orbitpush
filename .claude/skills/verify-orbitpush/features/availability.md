@@ -8,7 +8,7 @@
 - `deploy` while disabled keeps the rule, warns `The site is disabled`, and deploys as usual.
 - `enable` deletes every `orbitpush disabled` rule and purges. Run twice, the second run prints `✔ <name> is already enabled` and sends no write.
 - `destroy` without `--yes` and without a terminal exits `1` before any request, with `destroy deletes the pull zone, storage zone and every file of <name>. Run it with --yes to confirm.` On a terminal, with `CI` unset, `false` or `0`, it asks to type the project name; Ctrl-C exits `130`. With `--yes` it reads the pull zone, deletes the storage zone named by its `StorageZoneId` (bunny.net deletes the pull zone along with it), then the pull zone, which counts a 404 as deleted, then `orbitpush.json`.
-- `destroy` again after both zones are gone gets a 404 on the pull zone read, sends no DELETE and exits `0`.
+- `destroy` again after both zones are gone gets a 404 on the pull zone read, sends no DELETE, warns `If a storage zone named <name> is left, delete it in the bunny.net dashboard.` and exits `0`.
 - `destroy` stops at the first request that fails with anything but 404, with exit `1`, and keeps `orbitpush.json` for a retry. A pull zone that does not serve a storage zone stops it before any DELETE.
 - All three need `BUNNY_API_KEY` and `orbitpush.json`, and check the key first. Without the config they always fail, also in a terminal, where `deploy` would offer setup instead (`features/cli-basics.md`).
 
