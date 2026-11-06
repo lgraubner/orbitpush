@@ -15,7 +15,6 @@ const valid = {
   region: "DE",
   replicationRegions: ["NY"],
   geoZones: ["EU", "US"],
-  storageZoneId: 1,
   pullZoneId: 2,
 };
 
@@ -37,6 +36,14 @@ test("reads a valid orbitpush.json written before aliases, redirects and headers
     redirects: [],
     headers: [],
   });
+});
+
+test("reads an orbitpush.json that still stores storageZoneId and drops it", async () => {
+  await writeFile("orbitpush.json", JSON.stringify({ ...valid, storageZoneId: 1 }));
+
+  const config = await readConfig();
+  expect(config).toMatchObject({ name: "site", pullZoneId: 2 });
+  expect(config).not.toHaveProperty("storageZoneId");
 });
 
 test("tells the user to run init when orbitpush.json is missing, also without a terminal", async () => {

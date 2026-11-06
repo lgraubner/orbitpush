@@ -2,7 +2,7 @@ import { rm } from "node:fs/promises";
 
 import { input } from "@inquirer/prompts";
 
-import { api, ApiError } from "@/bunny.ts";
+import { api, ApiError, getPullZone, storageZoneId } from "@/bunny.ts";
 import { type Config, CONFIG_FILE } from "@/config.ts";
 import { log } from "@/log.ts";
 
@@ -24,11 +24,19 @@ export async function destroy(
     });
   }
 
-  log.step(`Deleting pull zone ${config.name} (${config.pullZoneId})`);
-  await deleteIfExists(apiKey, `/pullzone/${config.pullZoneId}`);
+  const pullZone = await getPullZone(apiKey, config.pullZoneId).catch((error: unknown) => {
+    if (isNotFound(error)) return undefined;
+    throw error;
+  });
 
-  log.step(`Deleting storage zone ${config.name} (${config.storageZoneId})`);
-  await deleteIfExists(apiKey, `/storagezone/${config.storageZoneId}`);
+  if (pullZone) {
+    const zoneId = storageZoneId(pullZone);
+    log.step(`Deleting storage zone ${config.name} (${zoneId}) and every file in it`);
+    await deleteIfExists(apiKey, `/storagezone/${zoneId}`);
+
+    log.step(`Deleting pull zone ${config.name} (${config.pullZoneId})`);
+    await deleteIfExists(apiKey, `/pullzone/${config.pullZoneId}`);
+  }
 
   await rm(CONFIG_FILE, { force: true });
   log.success(`Deleted ${config.name} from bunny.net and removed ${CONFIG_FILE}`);
@@ -38,6 +46,10 @@ async function deleteIfExists(apiKey: string, path: string) {
   try {
     await api(apiKey, { method: "DELETE", path });
   } catch (error) {
-    if (!(error instanceof ApiError && error.status === 404)) throw error;
+    if (!isNotFound(error)) throw error;
   }
+}
+
+function isNotFound(error: unknown) {
+  return error instanceof ApiError && error.status === 404;
 }

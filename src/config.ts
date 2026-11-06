@@ -52,7 +52,7 @@ const ConfigSchema = z.pipe(
       trailingSlash: z.optional(z.enum(TRAILING_SLASH)),
       redirects: z._default(z.array(Redirect), []),
       headers: z._default(z.array(Header), []),
-      storageZoneId: z.int(),
+      storageZoneId: z.optional(z.int()),
       pullZoneId: z.int(),
     })
     .check((ctx) => {
@@ -60,7 +60,7 @@ const ConfigSchema = z.pipe(
       if (problem)
         ctx.issues.push({ code: "custom", message: problem, path: ["aliases"], input: ctx.value });
     }),
-  z.transform(({ $schema: _schema, ...config }) => config),
+  z.transform(({ $schema: _schema, storageZoneId: _storageZoneId, ...config }) => config),
 );
 
 // bunny.net allows 10 hostnames per pull zone by default, <name>.b-cdn.net and the domain included

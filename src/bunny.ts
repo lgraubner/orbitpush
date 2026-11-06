@@ -9,16 +9,26 @@ export function dashboardUrl(pullZoneId: number) {
   return `https://dash.bunny.net/cdn/${pullZoneId}`;
 }
 
-export const PullZone = z.object({
-  Id: z.int(),
-  Name: z.string(),
-  Hostnames: z.array(
-    z.object({ Value: z.string(), HasCertificate: z.boolean(), ForceSSL: z.boolean() }),
-  ),
-  EdgeRules: z.array(
-    z.object({ Guid: z.string(), Description: z.nullable(z.string()), OrderIndex: z.int() }),
-  ),
-});
+const STORAGE_ZONE_ORIGIN = 2;
+
+export const PullZone = z.pipe(
+  z.object({
+    Id: z.int(),
+    Name: z.string(),
+    OriginType: z.int(),
+    StorageZoneId: z.nullable(z.int()),
+    Hostnames: z.array(
+      z.object({ Value: z.string(), HasCertificate: z.boolean(), ForceSSL: z.boolean() }),
+    ),
+    EdgeRules: z.array(
+      z.object({ Guid: z.string(), Description: z.nullable(z.string()), OrderIndex: z.int() }),
+    ),
+  }),
+  z.transform(({ OriginType, StorageZoneId, ...zone }) => ({
+    ...zone,
+    storageZoneId: OriginType === STORAGE_ZONE_ORIGIN ? (StorageZoneId ?? undefined) : undefined,
+  })),
+);
 
 export type PullZone = z.infer<typeof PullZone>;
 
@@ -124,6 +134,24 @@ export function isConnected(pullZone: PullZone, host: string | undefined) {
 
 export function getPullZone(apiKey: string, pullZoneId: number) {
   return apiJson(apiKey, { schema: PullZone, method: "GET", path: `/pullzone/${pullZoneId}` });
+}
+
+export function storageZoneId(pullZone: PullZone) {
+  if (pullZone.storageZoneId === undefined) {
+    throw new Error(
+      `Pull zone ${pullZone.Name} (${pullZone.Id}) does not serve a storage zone, so it was not set up by orbitpush. Check pullZoneId in ${CONFIG_FILE}.`,
+    );
+  }
+
+  return pullZone.storageZoneId;
+}
+
+export function getStorageZone(apiKey: string, pullZone: PullZone) {
+  return apiJson(apiKey, {
+    schema: StorageZone,
+    method: "GET",
+    path: `/storagezone/${storageZoneId(pullZone)}`,
+  });
 }
 
 export async function ensureDomains(

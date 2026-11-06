@@ -134,7 +134,6 @@ test("destroy without --yes outside a terminal exits with 1 and keeps orbitpush.
       region: "DE",
       replicationRegions: [],
       geoZones: ["EU"],
-      storageZoneId: 1,
       pullZoneId: 2,
     }),
   );

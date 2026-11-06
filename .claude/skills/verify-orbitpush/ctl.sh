@@ -168,7 +168,9 @@ case "$cmd" in
     [[ -f "$config" ]] || { echo "live-destroy: no $config, nothing created by this run" >&2; exit 1; }
     name="$(node -p "require('$config').name")"
     [[ "$name" == verify-* ]] || { echo "live-destroy: refusing to delete zones named $name" >&2; exit 1; }
-    for zone in "pullzone:$(node -p "require('$config').pullZoneId")" "storagezone:$(node -p "require('$config').storageZoneId")"; do
+    pull_zone_id="$(node -p "require('$config').pullZoneId")"
+    storage_zone_id="$(curl -sS -H "AccessKey: $BUNNY_API_KEY" "https://api.bunny.net/pullzone/$pull_zone_id" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(s).StorageZoneId??""))}catch{}})')"
+    for zone in "storagezone:$storage_zone_id" "pullzone:$pull_zone_id"; do
       kind="${zone%%:*}"
       id="${zone#*:}"
       found="$(curl -sS -H "AccessKey: $BUNNY_API_KEY" "https://api.bunny.net/$kind/$id" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).Name??"")}catch{}})')"

@@ -162,7 +162,6 @@ export async function init(
       geoZones,
       redirects: [],
       headers: [],
-      storageZoneId: storageZone.Id,
       pullZoneId: pullZone.Id,
     };
     await writeConfig(config);

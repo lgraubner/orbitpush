@@ -20,7 +20,6 @@ const base = {
   region: "DE",
   replicationRegions: [],
   geoZones: ["EU"],
-  storageZoneId: 1,
   pullZoneId: 2,
 };
 let stderr = "";

@@ -64,8 +64,11 @@ for (const s of Object.values(sites)) {
     test("destroy needs --yes, then deletes both zones", async () => {
       const config = JSON.parse(await readFile(join(s.dir, "orbitpush.json"), "utf8")) as {
         pullZoneId: number;
-        storageZoneId: number;
       };
+      const headers = { AccessKey: process.env.BUNNY_API_KEY ?? "" };
+      const pullZone = (await (
+        await fetch(`https://api.bunny.net/pullzone/${config.pullZoneId}`, { headers })
+      ).json()) as { StorageZoneId: number };
 
       expect((await s.cli("destroy")).code).toBe(1);
       expect(existsSync(join(s.dir, "orbitpush.json"))).toBe(true);
@@ -73,8 +76,10 @@ for (const s of Object.values(sites)) {
       expect((await s.cli("destroy", "--yes")).code).toBe(0);
       expect(existsSync(join(s.dir, "orbitpush.json"))).toBe(false);
 
-      const headers = { AccessKey: process.env.BUNNY_API_KEY ?? "" };
-      for (const path of [`pullzone/${config.pullZoneId}`, `storagezone/${config.storageZoneId}`]) {
+      for (const path of [
+        `pullzone/${config.pullZoneId}`,
+        `storagezone/${pullZone.StorageZoneId}`,
+      ]) {
         const response = await fetch(`https://api.bunny.net/${path}`, { headers });
         expect(response.status, path).toBe(404);
       }
