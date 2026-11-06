@@ -11,6 +11,7 @@ import { domainRules, isAliasRule } from "../src/rules.ts";
 
 const cwd = process.cwd();
 const API = "https://api.bunny.net";
+const { isTTY } = process.stderr;
 let stderr: ReturnType<typeof vi.spyOn>;
 
 beforeEach(async () => {
@@ -19,6 +20,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  process.stderr.isTTY = isTTY;
   process.chdir(cwd);
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -682,4 +684,42 @@ test("the DNS wait removes its Ctrl+C listener when it ends", async () => {
   await settleWithFakeTimers(done);
 
   expect(process.listenerCount("SIGINT")).toBe(listeners);
+});
+
+const checkCounts = () =>
+  [...output().matchAll(/\b(\d+) checks?\b/g)].map((match) => Number(match[1]));
+
+test("the DNS wait status counts the checks so far, starting at 1 check", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  process.stderr.isTTY = true;
+  const config = await site();
+  const { certificateChecks } = fakeBunny({ dnsFromCheck: 4 });
+
+  await settleWithFakeTimers(
+    domains("key", config, ["add", "www.example.com"], { interactive: true }),
+  );
+
+  expect(certificateChecks).toHaveLength(4);
+  expect(output()).toMatch(/\b1 check so far\b/);
+  expect(checkCounts()).toEqual([1, 2, 3]);
+});
+
+test("the DNS wait status shows as many checks as have run when Ctrl+C stops it", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  process.stderr.isTTY = true;
+  const config = await site();
+  const { certificateChecks } = fakeBunny();
+
+  const done = domains("key", config, ["add", "www.example.com"], { interactive: true }).catch(
+    (e: unknown) => e,
+  );
+  while (certificateChecks.length < 5) {
+    await new Promise((resolve) => setImmediate(resolve));
+    await vi.advanceTimersByTimeAsync(1000);
+  }
+
+  process.emit("SIGINT");
+  await settleWithFakeTimers(done);
+
+  expect(checkCounts()).toEqual([1, 2, 3, 4, 5]);
 });

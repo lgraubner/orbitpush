@@ -24,10 +24,15 @@ export const log = {
   status: (text: string) => {
     if (!process.stderr.isTTY) return;
     clearStatus();
-    process.stderr.write(style("dim", `${text}…`));
+    // Erase in Line clears only the cursor's row, so auto-wrap (DECAWM) is off while the line is written and the terminal clips it to one row
+    process.stderr.write(`\x1b[?7l${style("dim", `${text}…`)}\x1b[?7h`);
     statusShown = true;
   },
 };
+
+export function count(n: number, noun: string) {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
 
 export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);

@@ -13,7 +13,7 @@ import {
   syncRules,
 } from "@/bunny.ts";
 import { aliasProblem, type Config, CONFIG_FILE, hostnameProblem, writeConfig } from "@/config.ts";
-import { log } from "@/log.ts";
+import { count, log } from "@/log.ts";
 import { managedRules } from "@/rules.ts";
 
 const WAIT_MS = 15 * 60_000;
@@ -208,9 +208,9 @@ async function waitForConnection(
 
   try {
     const deadline = Date.now() + WAIT_MS;
-    while (connection.status === "dns" && Date.now() < deadline) {
+    for (let check = 1; connection.status === "dns" && Date.now() < deadline; check++) {
       log.status(
-        `Waiting for DNS of ${host}, next check in ${RECHECK_MS / 1000}s (Ctrl+C to stop)`,
+        `Waiting for DNS, ${count(check, "check")} so far (Ctrl+C to stop), checking ${host} every ${RECHECK_MS / 1000}s`,
       );
       await sleep(Math.min(RECHECK_MS, deadline - Date.now()), controller.signal);
       connection = await connectHostname(apiKey, pullZoneId, host, hostname);
