@@ -101,6 +101,7 @@ test("destroy rerun after both zones are gone sends no delete, removes orbitpush
   expect(requests).toEqual([getPullZone]);
   expect(existsSync("orbitpush.json")).toBe(false);
   expect(stderr()).toMatch(/storage zone named site is left/);
+  expect(stderr()).not.toMatch(/Deleted site from bunny.net/);
 });
 
 test("destroy does not warn about a leftover storage zone when it deleted it", async () => {
