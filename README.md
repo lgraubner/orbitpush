@@ -66,7 +66,7 @@ npx orbitpush domains remove example.com
 npx orbitpush domains list
 ```
 
-`domains add` adds the hostname to the pull zone, prints the DNS record to create, and waits until the record points to bunny.net: it checks after 5, 10, 20 and 40 seconds, then every minute for up to 15 minutes. Then it gets a free SSL certificate, turns on HTTPS and writes the alias redirects. If DNS takes longer, or you stop it with Ctrl+C, run the same command again later: it continues where it stopped. Without a terminal it checks once and exits with status `1` while the domain is not connected.
+`domains add` adds the hostname to the pull zone, prints the DNS record to create, and waits until the record points to bunny.net: it checks every 10 seconds for up to 15 minutes. Then it gets a free SSL certificate, turns on HTTPS and writes the alias redirects. If DNS takes longer, or you stop it with Ctrl+C, run the same command again later: it continues where it stopped. Without a terminal it checks once and exits with status `1` while the domain is not connected.
 
 With `--primary`, the domain becomes the primary domain only once it is connected, and the former primary domain becomes an alias that redirects to it. Until then it stays an alias, so visitors are never sent to a domain without HTTPS.
 

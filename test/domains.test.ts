@@ -282,7 +282,7 @@ test("add without a terminal prints the DNS record, checks once and fails, keepi
   expect(output()).toMatch(/ALIAS|ANAME|CNAME flattening/);
 });
 
-test("add in a terminal rechecks DNS after 5, 10, 20 and 40 seconds, then every minute, and connects on success", async () => {
+test("add in a terminal rechecks DNS every 10 seconds and connects on success", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   const config = await site();
   const { certificateChecks, writes, requests } = fakeBunny({ dnsFromCheck: 6 });
@@ -291,7 +291,7 @@ test("add in a terminal rechecks DNS after 5, 10, 20 and 40 seconds, then every 
   await settleWithFakeTimers(done);
 
   const seconds = certificateChecks.map((t) => (t - certificateChecks[0]) / 1000);
-  expect(seconds).toEqual([0, 5, 15, 35, 75, 135]);
+  expect(seconds).toEqual([0, 10, 20, 30, 40, 50]);
   expect(requests.indexOf(`POST ${API}/pullzone/2/setForceSSL`)).toBeGreaterThan(
     requests.lastIndexOf(`GET ${API}/pullzone/loadFreeCertificate?hostname=www.example.com`),
   );
@@ -316,8 +316,8 @@ test("add in a terminal gives up after 15 minutes", async () => {
   expect(String(error)).toContain("is not connected yet");
   expect(String(error)).toContain("orbitpush domains add www.example.com");
   const seconds = certificateChecks.map((t) => (t - certificateChecks[0]) / 1000);
-  expect(seconds.slice(0, 6)).toEqual([0, 5, 15, 35, 75, 135]);
-  expect(seconds.at(-1)).toBeGreaterThanOrEqual(14 * 60);
+  expect(seconds.slice(0, 4)).toEqual([0, 10, 20, 30]);
+  expect(seconds.at(-1)).toBe(15 * 60);
   expect(failedAfter).toBeLessThanOrEqual(15 * 60);
   expect(writes).not.toContain(`POST ${API}/pullzone/2/setForceSSL`);
 });
