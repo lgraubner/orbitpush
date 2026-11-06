@@ -392,6 +392,20 @@ test("add --primary swaps a connected alias with the primary domain and turns th
   expect(output()).toMatch(/www\.example\.com.*redirect to it/);
 });
 
+test("add --primary without a primary domain makes the hostname the domain even before it connects", async () => {
+  const config = await site();
+  fakeBunny();
+
+  const error = await domains("key", config, ["add", "www.example.com"], {
+    primary: true,
+    interactive: false,
+  }).catch((e: unknown) => e);
+
+  expect(String(error)).toContain("www.example.com is not connected yet");
+  expect(String(error)).not.toContain("alias");
+  expect(await readConfig()).toMatchObject({ domain: "www.example.com", aliases: [] });
+});
+
 test("add --primary keeps a hostname that does not connect as an alias", async () => {
   const config = await site({ domain: "www.example.com" });
   fakeBunny({ hostnames: [connected("www.example.com")] });

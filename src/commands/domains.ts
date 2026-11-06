@@ -48,6 +48,7 @@ async function addDomain(apiKey: string, config: Config, host: string, options: 
   const pullZone = await getPullZone(apiKey, config.pullZoneId);
   const cdnHost = `${pullZone.Name}.b-cdn.net`;
   const primary = config.domain?.toLowerCase();
+  const swapsPrimary = options.primary === true && primary !== undefined && host !== primary;
 
   if (options.primary && host === primary) {
     log.success(`${host} is already the primary domain`);
@@ -77,7 +78,7 @@ async function addDomain(apiKey: string, config: Config, host: string, options: 
     retry,
   });
   if (connection.status !== "connected") {
-    const stays = options.primary && host !== primary ? " It stays an alias for now." : "";
+    const stays = swapsPrimary ? " It stays an alias for now." : "";
     throw new Error(
       connection.status === "dns"
         ? `${host} is not connected yet: its DNS does not point to ${cdnHost}.${stays} Run \`${retry}\` again in a few minutes, once the record is set. If the domain uses a proxy such as Cloudflare's, turn it off for this record.`
@@ -85,7 +86,7 @@ async function addDomain(apiKey: string, config: Config, host: string, options: 
     );
   }
 
-  if (options.primary && primary && host !== primary) {
+  if (swapsPrimary) {
     config = {
       ...config,
       domain: host,
