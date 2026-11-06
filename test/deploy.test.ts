@@ -79,19 +79,10 @@ async function decode(body: unknown) {
 }
 
 function fakeBunny({
-  storageZone = {
-    Id: 1,
-    Name: "site",
-    Password: "pw",
-    StorageHostname: "storage.bunnycdn.com",
-  },
+  storageZone = { Id: 1, Name: "site", Password: "pw", StorageHostname: "storage.bunnycdn.com" },
   edgeRules = [
     { Guid: "keep", Description: kept, OrderIndex: 0 },
-    {
-      Guid: "old",
-      Description: "orbitpush 0000000000 /x /y 301",
-      OrderIndex: 0,
-    },
+    { Guid: "old", Description: "orbitpush 0000000000 /x /y 301", OrderIndex: 0 },
     { Guid: "mine", Description: "created in dashboard", OrderIndex: 0 },
   ],
   slowAssets = false,
@@ -308,10 +299,7 @@ test("deploy names the b-cdn.net URL until the domain has a certificate", async 
     certificateFails: true,
   });
 
-  const url = await deploy("key", {
-    ...config(dir),
-    domain: "www.example.com",
-  });
+  const url = await deploy("key", { ...config(dir), domain: "www.example.com" });
 
   const output = stripVTControlCharacters(stderr.mock.calls.join(""));
   expect(output).toContain(`Deploying ${dir} to https://site-cdn.b-cdn.net`);
@@ -326,10 +314,7 @@ test("deploy returns the domain URL once it gets the domain a certificate", asyn
     hostnames: [{ Value: "www.example.com", HasCertificate: false, ForceSSL: false }],
   });
 
-  const url = await deploy("key", {
-    ...config(dir),
-    domain: "www.example.com",
-  });
+  const url = await deploy("key", { ...config(dir), domain: "www.example.com" });
 
   expect(url).toBe("https://www.example.com");
 });
@@ -339,11 +324,7 @@ test("deploy names the b-cdn.net URL and lists no replicas or aliases when there
   const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
   fakeBunny({ pullZoneName: "site-cdn" });
 
-  await deploy("key", {
-    ...config(dir),
-    name: "project",
-    replicationRegions: ["DE"],
-  });
+  await deploy("key", { ...config(dir), name: "project", replicationRegions: ["DE"] });
 
   const output = stripVTControlCharacters(stderr.mock.calls.join(""));
   const header = output.indexOf(`Deploying ${dir} to https://site-cdn.b-cdn.net`);
@@ -436,9 +417,7 @@ test("deploy reports an output directory that is not a directory as such, not as
   const file = join(dir, "index.html");
   const { writes } = fakeBunny();
 
-  await expect(deploy("key", config(file))).rejects.toMatchObject({
-    code: "ENOTDIR",
-  });
+  await expect(deploy("key", config(file))).rejects.toMatchObject({ code: "ENOTDIR" });
   expect(writes).toEqual([]);
 });
 
@@ -625,9 +604,7 @@ test("deploy gives one DNS instruction for a hostname it adds before DNS points 
 test("deploy gives no certificate warning for a hostname it just added when the certificate fails for another reason", async () => {
   const dir = await outputDir();
   const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-  const { requests } = fakeBunny({
-    certificateFails: "CAA record forbids issuance",
-  });
+  const { requests } = fakeBunny({ certificateFails: "CAA record forbids issuance" });
 
   await deploy("key", { ...config(dir), domain: "www.example.com" });
 
@@ -796,11 +773,7 @@ test("deploy keeps the disabled rule while deleting other stale managed rules", 
   const { writes } = fakeBunny({
     edgeRules: [
       { Guid: "off", Description: "orbitpush disabled", OrderIndex: 0 },
-      {
-        Guid: "old",
-        Description: "orbitpush 0000000000 /x /y 301",
-        OrderIndex: 1,
-      },
+      { Guid: "old", Description: "orbitpush 0000000000 /x /y 301", OrderIndex: 1 },
     ],
   });
 
@@ -817,11 +790,7 @@ test("deploy adds each alias like a domain, lowercased", async () => {
     hostnames: [{ Value: "www.example.com", HasCertificate: true, ForceSSL: true }],
   });
 
-  await deploy("key", {
-    ...config(dir),
-    domain: "www.example.com",
-    aliases: ["Example.COM"],
-  });
+  await deploy("key", { ...config(dir), domain: "www.example.com", aliases: ["Example.COM"] });
 
   expect(domainRequests(requests)).toEqual([
     "POST https://api.bunny.net/pullzone/2/addHostname",
@@ -963,11 +932,7 @@ test("deploy strips the trailing slash with trailingSlash never, except with a q
   expect(triggerMatches(rule, "https://site.b-cdn.net/")).toBe(false);
   expect(triggerMatches(rule, "https://site.b-cdn.net/guides")).toBe(false);
   expect(rule.TriggerMatchingType).toBe(1);
-  expect(rule.Triggers).toContainEqual({
-    Type: 6,
-    PatternMatchingType: 2,
-    PatternMatches: ["*"],
-  });
+  expect(rule.Triggers).toContainEqual({ Type: 6, PatternMatchingType: 2, PatternMatches: ["*"] });
 });
 
 const redirectLines = (count: number, prefix = "r") =>
@@ -998,11 +963,7 @@ test("deploy deletes removed rules first when adding first would fill the zone",
   const dir = await outputDir();
   const old = redirectRules(redirects(`${redirectLines(48)}\n/gone /b`)).rules;
   const { writes } = fakeBunny({
-    edgeRules: old.map((r, i) => ({
-      Guid: `g${i}`,
-      Description: r.Description,
-      OrderIndex: i,
-    })),
+    edgeRules: old.map((r, i) => ({ Guid: `g${i}`, Description: r.Description, OrderIndex: i })),
   });
 
   await deploy("key", config(dir, `${redirectLines(48)}\n/new /b`));
@@ -1016,11 +977,7 @@ test("deploy frees a zone left full by an earlier version once a line is removed
   const dir = await outputDir();
   const old = redirectRules(redirects(redirectLines(50))).rules;
   const { writes } = fakeBunny({
-    edgeRules: old.map((r, i) => ({
-      Guid: `g${i}`,
-      Description: r.Description,
-      OrderIndex: i,
-    })),
+    edgeRules: old.map((r, i) => ({ Guid: `g${i}`, Description: r.Description, OrderIndex: i })),
   });
 
   await deploy("key", config(dir, redirectLines(49)));
@@ -1115,11 +1072,7 @@ test("deploy warns about a hostname on the pull zone that orbitpush.json no long
   const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
   const { hostnameRemovals } = fakeBunny({ hostnames: zoneHostnames });
 
-  await deploy("key", {
-    ...config(dir),
-    domain: "www.example.com",
-    aliases: ["example.com"],
-  });
+  await deploy("key", { ...config(dir), domain: "www.example.com", aliases: ["example.com"] });
 
   expect(hostnameRemovals).toEqual([]);
   const warnings = stderr.mock.calls.map(String).filter((line) => line.includes("!"));
@@ -1136,10 +1089,7 @@ test("deploy starts no further upload once one has failed", async () => {
   const dir = await outputDir();
   for (let i = 0; i < 20; i++) await writeFile(join(dir, "assets", `f${i}.js`), String(i));
   vi.spyOn(process.stderr, "write").mockReturnValue(true);
-  const { uploads } = fakeBunny({
-    slowAssets: true,
-    failUpload: "assets/f0.js",
-  });
+  const { uploads } = fakeBunny({ slowAssets: true, failUpload: "assets/f0.js" });
 
   await expect(deploy("key", config(dir))).rejects.toThrow(/PUT \/assets\/f0\.js failed/);
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -1167,28 +1117,16 @@ test.each([
 
 test("deploy deletes the old alias redirect before writing the swapped one, so the two never loop", async () => {
   const dir = await outputDir();
-  const before = domainRules({
-    name: "site",
-    domain: "www.example.com",
-    aliases: ["example.com"],
-  });
+  const before = domainRules({ name: "site", domain: "www.example.com", aliases: ["example.com"] });
   const { writes } = fakeBunny({
     hostnames: [
       { Value: "www.example.com", HasCertificate: true, ForceSSL: true },
       { Value: "example.com", HasCertificate: true, ForceSSL: true },
     ],
-    edgeRules: before.map((r, i) => ({
-      Guid: `g${i}`,
-      Description: r.Description,
-      OrderIndex: i,
-    })),
+    edgeRules: before.map((r, i) => ({ Guid: `g${i}`, Description: r.Description, OrderIndex: i })),
   });
 
-  await deploy("key", {
-    ...config(dir),
-    domain: "example.com",
-    aliases: ["www.example.com"],
-  });
+  await deploy("key", { ...config(dir), domain: "example.com", aliases: ["www.example.com"] });
 
   const ruleWrites = writes.filter((w) => w.includes("/edgerules/"));
   expect(ruleWrites[0]).toBe("DELETE https://api.bunny.net/pullzone/2/edgerules/g0");
@@ -1373,16 +1311,8 @@ test("deploy prints no Edge rules summary when there is no managed rule", async 
 test("deploy writes no alias redirect to a swapped-in domain without a certificate, deletes the old one and warns", async () => {
   const dir = await outputDir();
   const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-  const swapped = {
-    name: "site",
-    domain: "example.com",
-    aliases: ["www.example.com"],
-  };
-  const before = domainRules({
-    name: "site",
-    domain: "www.example.com",
-    aliases: ["example.com"],
-  });
+  const swapped = { name: "site", domain: "example.com", aliases: ["www.example.com"] };
+  const before = domainRules({ name: "site", domain: "www.example.com", aliases: ["example.com"] });
   const current = domainRules(swapped).filter((r) => isAliasRule(r.Description));
   const { writes, edgeRuleWrites } = fakeBunny({
     hostnames: [{ Value: "www.example.com", HasCertificate: true, ForceSSL: true }],
@@ -1622,4 +1552,39 @@ test("deploy leaves files under .orbitpush/ out of a new stale record", async ()
 
   expect(records).toEqual([{ version: 1, stale: { "gone.html": NOW.toISOString() } }]);
   expect(output).toMatch(/^› Files: 2 uploaded, 1 kept, 1 unchanged$/m);
+});
+
+test("deploy records a stale file named like an Object.prototype member and deletes it once expired", async () => {
+  freezeTime();
+  const listing = {
+    "": [...defaultListing[""], object("toString"), object("constructor")],
+    "assets/": defaultListing["assets/"],
+  };
+
+  const first = await deployOutput(
+    deployed,
+    {},
+    { listing, staleRecord: { version: 1, stale: {} } },
+  );
+  expect(first.records).toEqual([
+    {
+      version: 1,
+      stale: {
+        constructor: NOW.toISOString(),
+        "gone.html": NOW.toISOString(),
+        toString: NOW.toISOString(),
+      },
+    },
+  ]);
+
+  vi.restoreAllMocks();
+  const later = await deployOutput(
+    deployed,
+    {},
+    { listing, staleRecord: { version: 1, stale: { constructor: LONG_AGO, toString: LONG_AGO } } },
+  );
+  expect(deletes(later.writes)).toEqual([
+    "DELETE https://storage.bunnycdn.com/site/constructor",
+    "DELETE https://storage.bunnycdn.com/site/toString",
+  ]);
 });
