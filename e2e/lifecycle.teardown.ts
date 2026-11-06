@@ -66,9 +66,12 @@ for (const s of Object.values(sites)) {
         pullZoneId: number;
       };
       const headers = { AccessKey: process.env.BUNNY_API_KEY ?? "" };
-      const pullZone = (await (
-        await fetch(`https://api.bunny.net/pullzone/${config.pullZoneId}`, { headers })
-      ).json()) as { StorageZoneId: number };
+      const pullZoneResponse = await fetch(`https://api.bunny.net/pullzone/${config.pullZoneId}`, {
+        headers,
+      });
+      expect(pullZoneResponse.status).toBe(200);
+      const pullZone = (await pullZoneResponse.json()) as { StorageZoneId: unknown };
+      expect(pullZone.StorageZoneId).toEqual(expect.any(Number));
 
       expect((await s.cli("destroy")).code).toBe(1);
       expect(existsSync(join(s.dir, "orbitpush.json"))).toBe(true);
