@@ -128,7 +128,7 @@ async function removeDomain(apiKey: string, config: Config, host: string) {
   const primary = config.domain?.toLowerCase();
   if (host === primary && config.aliases.length) {
     throw new Error(
-      `${host} has aliases that redirect to it (${config.aliases.join(", ")}). Remove them first, or set a new domain in ${CONFIG_FILE}.`,
+      `${host} has aliases that redirect to it (${config.aliases.join(", ")}). Remove them first, or make another domain primary: \`orbitpush domains add <host> --primary\`.`,
     );
   }
 

@@ -27,6 +27,9 @@ Usage:
   orbitpush domains add <host>     Add a domain and connect it: waits for its DNS record,
                                    then turns on HTTPS. The first one becomes the primary
                                    domain, later ones redirect to it
+  orbitpush domains add <host> --primary
+                                   Make a domain the primary domain once it is connected;
+                                   the former primary domain then redirects to it
   orbitpush domains remove <host>  Remove a domain from orbitpush.json and the pull zone
   orbitpush domains list           Show each domain and what it still needs
   orbitpush disable                Block all requests to the site, keeping files and settings
