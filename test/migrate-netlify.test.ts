@@ -117,6 +117,16 @@ test("reads _redirects lines with query params, forced status and conditions", (
   expect(warnings[0]).toContain("_redirects:6");
 });
 
+test("migrates a _redirects line whose condition lists no value without the condition", async () => {
+  await setup();
+  await writeFile("public/_redirects", "/a /b 302 Country=,\n");
+
+  await migrateNetlify();
+
+  const written = JSON.parse(await readFile("orbitpush.json", "utf8"));
+  expect(written.redirects).toEqual([{ from: "/a", to: "/b", status: 302 }]);
+});
+
 test("joins a repeated header in _headers under its first spelling", () => {
   const text = "/*\n  Cache-Control: no-cache\n  cache-control: must-revalidate\n  X-A: 1\n";
 
