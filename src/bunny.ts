@@ -42,6 +42,14 @@ const Listing = z.array(
   }),
 );
 
+export const STALE_RECORD = ".orbitpush/stale.json";
+
+export const StaleRecord = z.object({
+  version: z.literal(1),
+  stale: z.record(z.string(), z.iso.datetime()),
+});
+export type StaleRecord = z.infer<typeof StaleRecord>;
+
 const ErrorBody = z.object({ Message: z.string() });
 
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -243,7 +251,7 @@ const STORAGE_AUTH_DELAY_MS = 5000;
 export function storage(zone: StorageZone) {
   const base = `https://${zone.StorageHostname}/${encodeURIComponent(zone.Name)}/`;
   const url = (path: string) => base + path.split("/").map(encodeURIComponent).join("/");
-  const request = async (
+  const send = async (
     method: string,
     path: string,
     init: { body?: Blob; headers?: Record<string, string>; signal?: AbortSignal } = {},
@@ -262,10 +270,15 @@ export function storage(zone: StorageZone) {
         continue;
       }
 
-      if (!response.ok) throw new Error(`${method} /${path} failed: ${await errorText(response)}`);
-
       return response;
     }
+  };
+  const request = async (...args: Parameters<typeof send>) => {
+    const response = await send(...args);
+    if (!response.ok)
+      throw new Error(`${args[0]} /${args[1]} failed: ${await errorText(response)}`);
+
+    return response;
   };
 
   return {
@@ -277,6 +290,13 @@ export function storage(zone: StorageZone) {
           REQUEST_TIMEOUT_MS + Math.ceil(data.size / MIN_UPLOAD_BYTES_PER_MS),
         ),
       }),
+    async read<T>(path: string, schema: z.ZodMiniType<T>) {
+      const response = await send("GET", path, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      if (response.status === 404) return undefined;
+      if (!response.ok) throw new Error(`GET /${path} failed: ${await errorText(response)}`);
+
+      return parseResponse(schema, await response.json().catch(() => undefined), `GET /${path}`);
+    },
     delete: (path: string) =>
       request("DELETE", path, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }),
     async list() {

@@ -39,7 +39,7 @@ In a terminal, `deploy` without an `orbitpush.json` asks whether to set up a new
 2. Compares the output directory with the storage zone using SHA256 checksums and uploads only changed files, HTML files last. A symlinked file is uploaded with the content it points to; a symlinked directory or a broken symlink is skipped with a warning.
 3. Applies the settings: [SPA mode](#spa-mode) or the [404 page](#404-page) from the output directory, and replication regions, delivery regions and domains from `orbitpush.json`.
 4. Turns `redirects` and `headers` into edge rules (see below).
-5. Deletes files from the storage zone that are no longer in the build.
+5. Deletes files from the storage zone that have not been in the build for 7 days, so an installed PWA or an open page still running the previous version can load its old assets. The date each file left the build is kept in `/.orbitpush/stale.json` in the storage zone, which the pull zone serves publicly like every other file there. It lists only paths the site served before. If you delete it, the next deploy treats every stale file as stale since then.
 6. Purges the pull zone cache.
 
 bunny.net applies edge rule changes one by one, a few seconds after `deploy` finishes (2–6 s in our tests).
