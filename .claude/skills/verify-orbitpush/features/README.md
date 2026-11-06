@@ -31,7 +31,7 @@ Each feature file has an H1, a one-paragraph description, and these H2s in order
 - [Init](./init.md): create the storage zone and pull zone and write `orbitpush.json`, interactively or with flags, including cleanup when it fails.
 - [Deploy](./deploy.md): upload changed files, delete stale files, purge, rerun with nothing changed, and safe failure.
 - [Edge rules](./edge-rules.md): `redirects` and `headers` in `orbitpush.json` become managed rules; unsupported entries warn; dashboard rules stay.
-- [Settings](./settings.md): SPA mode (from `redirects`) and the 404 page, replication regions, delivery regions, custom domains with SSL, and trailing slashes, re-applied on every deploy.
+- [Settings](./settings.md): SPA mode (from `redirects`) and the 404 page, replication regions, delivery regions, the primary domain and aliases with SSL, and trailing slashes, re-applied on every deploy.
 - [Domains](./domains.md): `domains add`, `remove` and `list`, including the DNS wait, `--primary` and the refusals.
 - [Migrate from Netlify](./migrate-netlify.md): `migrate-netlify` copies `netlify.toml`, `_redirects` and `_headers` into `orbitpush.json`, offline only, no bunny.net request.
 - [Availability](./availability.md): `disable`, `enable` and `destroy`, each run twice to show they converge.
