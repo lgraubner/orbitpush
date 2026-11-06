@@ -17,7 +17,7 @@ import { log } from "@/log.ts";
 import { managedRules } from "@/rules.ts";
 
 const WAIT_MS = 15 * 60_000;
-const RECHECK_SECONDS = [5, 10, 20, 40, 60];
+const RECHECK_SECONDS = 10;
 
 type Options = { primary?: boolean; interactive: boolean };
 
@@ -207,10 +207,9 @@ async function waitForConnection(
 
   try {
     const deadline = Date.now() + WAIT_MS;
-    for (let check = 0; connection.status === "dns" && Date.now() < deadline; check++) {
-      const seconds = RECHECK_SECONDS[Math.min(check, RECHECK_SECONDS.length - 1)];
-      log.status(`Waiting for DNS of ${host}, next check in ${seconds}s (Ctrl+C to stop)`);
-      await sleep(Math.min(seconds * 1000, deadline - Date.now()), controller.signal);
+    while (connection.status === "dns" && Date.now() < deadline) {
+      log.status(`Waiting for DNS of ${host}, next check in ${RECHECK_SECONDS}s (Ctrl+C to stop)`);
+      await sleep(Math.min(RECHECK_SECONDS * 1000, deadline - Date.now()), controller.signal);
       connection = await connectHostname(apiKey, pullZoneId, host, hostname);
     }
   } catch (error) {
