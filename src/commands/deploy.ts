@@ -13,6 +13,7 @@ import {
   geoZoneFlags,
   getPullZone,
   isConnected,
+  ORBITPUSH_DIR,
   pool,
   purgeCache,
   type PullZone,
@@ -64,7 +65,7 @@ export async function deploy(
     ([path, file]) => remote.get(path)?.toUpperCase() !== file.checksum,
   );
   const { expired, kept } = sortStale(
-    [...remote.keys()].filter((path) => !files.has(path) && !path.startsWith(".orbitpush/")),
+    [...remote.keys()].filter((path) => !files.has(path) && !path.startsWith(ORBITPUSH_DIR)),
     record,
     new Date(),
   );
@@ -110,7 +111,7 @@ export async function deploy(
   }
 
   const nextRecord = JSON.stringify({ version: 1, stale: kept } satisfies StaleRecord);
-  if (nextRecord !== JSON.stringify(record ?? { version: 1, stale: {} })) {
+  if ((record || Object.keys(kept).length) && nextRecord !== JSON.stringify(record)) {
     await bucket.put({
       path: STALE_RECORD,
       data: new Blob([nextRecord], { type: "application/json" }),
@@ -191,6 +192,13 @@ async function readOutput(dir: string, { migrated }: { migrated: boolean }) {
         log.warn(`${path} links to a directory, which deploy does not follow. Copy it instead.`);
         continue;
       }
+    }
+
+    if (path.startsWith(ORBITPUSH_DIR)) {
+      log.warn(
+        `${path} is not uploaded: ${ORBITPUSH_DIR} in the storage zone belongs to orbitpush.`,
+      );
+      continue;
     }
 
     // Netlify reads these files and never serves them, and _headers can hold passwords

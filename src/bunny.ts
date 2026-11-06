@@ -42,7 +42,8 @@ const Listing = z.array(
   }),
 );
 
-export const STALE_RECORD = ".orbitpush/stale.json";
+export const ORBITPUSH_DIR = ".orbitpush/";
+export const STALE_RECORD = `${ORBITPUSH_DIR}stale.json`;
 
 export const StaleRecord = z.object({
   version: z.literal(1),
@@ -251,10 +252,18 @@ const STORAGE_AUTH_DELAY_MS = 5000;
 export function storage(zone: StorageZone) {
   const base = `https://${zone.StorageHostname}/${encodeURIComponent(zone.Name)}/`;
   const url = (path: string) => base + path.split("/").map(encodeURIComponent).join("/");
-  const send = async (
+  const request = async (
     method: string,
     path: string,
-    init: { body?: Blob; headers?: Record<string, string>; signal?: AbortSignal } = {},
+    {
+      allowMissing = false,
+      ...init
+    }: {
+      body?: Blob;
+      headers?: Record<string, string>;
+      signal?: AbortSignal;
+      allowMissing?: boolean;
+    } = {},
   ) => {
     for (let attempt = 1; ; attempt++) {
       const response = await fetch(url(path), {
@@ -270,16 +279,15 @@ export function storage(zone: StorageZone) {
         continue;
       }
 
+      if (!response.ok && !(allowMissing && response.status === 404)) {
+        throw new Error(`${method} /${path} failed: ${await errorText(response)}`);
+      }
+
       return response;
     }
   };
-  const request = async (...args: Parameters<typeof send>) => {
-    const response = await send(...args);
-    if (!response.ok)
-      throw new Error(`${args[0]} /${args[1]} failed: ${await errorText(response)}`);
-
-    return response;
-  };
+  const parseJson = async <T>(response: Response, schema: z.ZodMiniType<T>, path: string) =>
+    parseResponse(schema, await response.json().catch(() => undefined), `GET /${path}`);
 
   return {
     put: ({ path, data, checksum }: { path: string; data: Blob; checksum: string }) =>
@@ -291,11 +299,13 @@ export function storage(zone: StorageZone) {
         ),
       }),
     async read<T>(path: string, schema: z.ZodMiniType<T>) {
-      const response = await send("GET", path, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      const response = await request("GET", path, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        allowMissing: true,
+      });
       if (response.status === 404) return undefined;
-      if (!response.ok) throw new Error(`GET /${path} failed: ${await errorText(response)}`);
 
-      return parseResponse(schema, await response.json().catch(() => undefined), `GET /${path}`);
+      return parseJson(response, schema, path);
     },
     delete: (path: string) =>
       request("DELETE", path, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }),
@@ -309,11 +319,7 @@ export function storage(zone: StorageZone) {
           const response = await request("GET", dir, {
             signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           });
-          const entries = parseResponse(
-            Listing,
-            await response.json().catch(() => undefined),
-            `GET /${dir}`,
-          );
+          const entries = await parseJson(response, Listing, dir);
 
           for (const entry of entries) {
             const path = dir + entry.ObjectName;
