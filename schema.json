@@ -3,15 +3,7 @@
   "title": "orbitpush.json",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "name",
-    "outputDir",
-    "region",
-    "replicationRegions",
-    "geoZones",
-    "storageZoneId",
-    "pullZoneId"
-  ],
+  "required": ["name", "outputDir", "region", "replicationRegions", "geoZones", "pullZoneId"],
   "properties": {
     "$schema": {
       "type": "string"
@@ -132,7 +124,9 @@
       }
     },
     "storageZoneId": {
-      "type": "integer"
+      "type": "integer",
+      "deprecated": true,
+      "description": "No longer used: orbitpush reads the storage zone from the pull zone. Older files keep it, and it is ignored."
     },
     "pullZoneId": {
       "type": "integer"

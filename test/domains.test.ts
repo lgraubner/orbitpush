@@ -39,7 +39,6 @@ async function site(over: Partial<Config> = {}): Promise<Config> {
     trailingSlash: "ignore",
     redirects: [],
     headers: [],
-    storageZoneId: 1,
     pullZoneId: 2,
     ...over,
   };
@@ -97,7 +96,14 @@ function fakeBunny({
     if (refuse.has(key)) return json({ Message: "Internal error" }, 500);
 
     if (key === `GET ${API}/pullzone/2`) {
-      return json({ Id: 2, Name: "site", Hostnames: zone.hostnames, EdgeRules: zone.rules });
+      return json({
+        Id: 2,
+        Name: "site",
+        OriginType: 2,
+        StorageZoneId: 1,
+        Hostnames: zone.hostnames,
+        EdgeRules: zone.rules,
+      });
     }
 
     if (url.startsWith(`${API}/pullzone/loadFreeCertificate?`)) {

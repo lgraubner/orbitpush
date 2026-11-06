@@ -17,7 +17,6 @@ const config: Config = {
   geoZones: ["EU"],
   redirects: [],
   headers: [],
-  storageZoneId: 1,
   pullZoneId: 2,
 };
 
@@ -35,7 +34,14 @@ function fakeBunny(edgeRules: { Guid: string; Description: string; OrderIndex: n
 
     if (url === "https://api.bunny.net/pullzone/2" && method === "GET") {
       return new Response(
-        JSON.stringify({ Id: 2, Name: "site", Hostnames: [], EdgeRules: edgeRules }),
+        JSON.stringify({
+          Id: 2,
+          Name: "site",
+          OriginType: 2,
+          StorageZoneId: 1,
+          Hostnames: [],
+          EdgeRules: edgeRules,
+        }),
       );
     }
 

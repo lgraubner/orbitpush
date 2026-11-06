@@ -166,7 +166,9 @@ function api(state, url, method, headers, body) {
     }
 
     if (method === "DELETE") {
+      // bunny.net deletes the pull zones attached to a storage zone along with it
       state.storageZones = state.storageZones.filter((z) => z !== zone);
+      state.pullZones = state.pullZones.filter((z) => z.StorageZoneId !== zone.Id);
       return reply(204);
     }
   }

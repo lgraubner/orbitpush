@@ -107,7 +107,6 @@ Commit this file. It never contains the API key.
   "region": "DE",
   "replicationRegions": ["NY"],
   "geoZones": ["EU", "US"],
-  "storageZoneId": 123456,
   "pullZoneId": 654321
 }
 ```
@@ -150,7 +149,7 @@ It does not copy `Basic-Auth` headers, which hold passwords, or redirects withou
 
 ## `orbitpush destroy`
 
-Deletes the pull zone (with its hostnames and certificates), then the storage zone with every file in it, then `orbitpush.json`. It asks you to type the project name first; `--yes` skips that and is required without a terminal. A zone that is already gone counts as deleted, so if `destroy` stops halfway, run it again. DNS records you created for your domains are not managed by orbitpush; remove them at your DNS provider.
+Deletes the storage zone that the pull zone serves, with every file in it, then the pull zone (with its hostnames and certificates), then `orbitpush.json`. It asks you to type the project name first; `--yes` skips that and is required without a terminal. A zone that is already gone counts as deleted, so if `destroy` stops halfway, run it again. DNS records you created for your domains are not managed by orbitpush; remove them at your DNS provider.
 
 ## Redirects and headers
 

@@ -5,13 +5,13 @@ import { join, relative, sep } from "node:path";
 
 import {
   api,
-  apiJson,
   checkRuleLimit,
   dashboardUrl,
   ensureDomains,
   findHostname,
   geoZoneFlags,
   getPullZone,
+  getStorageZone,
   isConnected,
   ORBITPUSH_DIR,
   pool,
@@ -19,7 +19,7 @@ import {
   type PullZone,
   STALE_RECORD,
   StaleRecord,
-  StorageZone,
+  type StorageZone,
   storage,
   syncRules,
 } from "@/bunny.ts";
@@ -36,14 +36,8 @@ export async function deploy(
   config: Config,
   { pruneHostnames = false }: { pruneHostnames?: boolean } = {},
 ) {
-  const [zone, pullZone] = await Promise.all([
-    apiJson(apiKey, {
-      schema: StorageZone,
-      method: "GET",
-      path: `/storagezone/${config.storageZoneId}`,
-    }),
-    getPullZone(apiKey, config.pullZoneId),
-  ]);
+  const pullZone = await getPullZone(apiKey, config.pullZoneId);
+  const zone = await getStorageZone(apiKey, pullZone);
   logTarget(config, zone, pullZone);
 
   const files = await readOutput(config.outputDir, {
@@ -88,6 +82,7 @@ export async function deploy(
 
   const { url, connected } = await applySettings(apiKey, {
     config,
+    zone,
     pullZone,
     spa,
     has404: files.has("404.html"),
@@ -244,16 +239,24 @@ async function applySettings(
   apiKey: string,
   {
     config,
+    zone,
     pullZone,
     spa,
     has404,
     pruneHostnames,
-  }: { config: Config; pullZone: PullZone; spa: boolean; has404: boolean; pruneHostnames: boolean },
+  }: {
+    config: Config;
+    zone: StorageZone;
+    pullZone: PullZone;
+    spa: boolean;
+    has404: boolean;
+    pruneHostnames: boolean;
+  },
 ) {
   log.status("Applying settings");
   await api(apiKey, {
     method: "POST",
-    path: `/storagezone/${config.storageZoneId}`,
+    path: `/storagezone/${zone.Id}`,
     body: {
       ReplicationRegions: config.replicationRegions.filter((region) => region !== config.region),
       Rewrite404To200: spa,

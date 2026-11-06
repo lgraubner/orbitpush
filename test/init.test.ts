@@ -72,7 +72,14 @@ function fakeBunny({ pullZoneTaken = false } = {}) {
     }
 
     if (url === "https://api.bunny.net/pullzone/2") {
-      return json({ Id: 2, Name: "site", Hostnames: [], EdgeRules: [] });
+      return json({
+        Id: 2,
+        Name: "site",
+        OriginType: 2,
+        StorageZoneId: 1,
+        Hostnames: [],
+        EdgeRules: [],
+      });
     }
 
     return new Response(null, { status: 204 });
@@ -93,9 +100,9 @@ test("init creates both zones and writes orbitpush.json", async () => {
   const written: unknown = JSON.parse(await readFile("orbitpush.json", "utf8"));
 
   expect(written).toMatchObject({
-    storageZoneId: 1,
     pullZoneId: 2,
   });
+  expect(written).not.toHaveProperty("storageZoneId");
 });
 
 test("init deletes both zones when orbitpush.json cannot be written", async () => {

@@ -37,7 +37,6 @@ function config(outputDir: string, redirectLines?: string): Config {
     trailingSlash: "ignore",
     redirects: redirects(redirectLines),
     headers: [],
-    storageZoneId: 1,
     pullZoneId: 2,
   };
 }
@@ -94,6 +93,8 @@ function fakeBunny({
   pullZoneName = "site",
   listing = defaultListing,
   staleRecord,
+  originType = 2,
+  storageZoneId = 1,
 }: {
   storageZone?: Record<string, unknown>;
   edgeRules?: Record<string, unknown>[];
@@ -106,6 +107,8 @@ function fakeBunny({
   pullZoneName?: string;
   listing?: typeof defaultListing;
   staleRecord?: { version: unknown; stale: Record<string, unknown> } | string;
+  originType?: number;
+  storageZoneId?: number | null;
 } = {}) {
   let unauthorized = storageUnauthorized;
   const requests: string[] = [];
@@ -149,14 +152,16 @@ function fakeBunny({
       uploads.push(`done ${path}`);
     }
 
-    if (url === "https://api.bunny.net/storagezone/1" && method === "GET") {
-      return json(storageZone);
+    if (url === `https://api.bunny.net/storagezone/${storageZoneId}` && method === "GET") {
+      return json({ ...storageZone, Id: storageZoneId });
     }
 
     if (url === "https://api.bunny.net/pullzone/2" && method === "GET") {
       return json({
         Id: 2,
         Name: pullZoneName,
+        OriginType: originType,
+        StorageZoneId: storageZoneId,
         Hostnames: hostnames,
         EdgeRules: edgeRules,
       });
@@ -410,6 +415,34 @@ test("deploy fails before any write when bunny.net returns an unexpected storage
 
   await expect(deploy("key", config(dir))).rejects.toThrow(/bunny\.net returned an unexpected/);
   expect(writes).toEqual([]);
+});
+
+test("deploy reads and writes the storage zone the pull zone names", async () => {
+  const dir = await outputDir();
+  const { requests, bodies } = fakeBunny({ storageZoneId: 7 });
+
+  await deploy("key", config(dir));
+
+  expect(requests).toContain("GET https://api.bunny.net/storagezone/7");
+  expect(bodies["POST https://api.bunny.net/storagezone/7"]).toEqual({
+    ReplicationRegions: ["NY"],
+    Rewrite404To200: false,
+    Custom404FilePath: "/404.html",
+  });
+  expect(requests.filter((r) => /storagezone\/1\b/.test(r))).toEqual([]);
+});
+
+test("deploy fails before any write when the pull zone has no storage zone origin", async () => {
+  const dir = await outputDir();
+
+  for (const storageZoneId of [0, null]) {
+    vi.restoreAllMocks();
+    const { writes, uploads } = fakeBunny({ originType: 0, storageZoneId });
+
+    await expect(deploy("key", config(dir))).rejects.toThrow();
+    expect(writes).toEqual([]);
+    expect(uploads).toEqual([]);
+  }
 });
 
 test("deploy reports an output directory that is not a directory as such, not as missing", async () => {

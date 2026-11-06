@@ -19,7 +19,6 @@ const config: Config = {
   geoZones: ["EU"],
   redirects: [],
   headers: [],
-  storageZoneId: 1,
   pullZoneId: 2,
 };
 
@@ -34,7 +33,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function fakeBunny(status: Record<string, number> = {}) {
+function fakeBunny({
+  status = {},
+  pullZone = { Id: 2, Name: "site", OriginType: 2, StorageZoneId: 7, Hostnames: [], EdgeRules: [] },
+}: { status?: Record<string, number>; pullZone?: Record<string, unknown> } = {}) {
   const requests: string[] = [];
 
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init = {}) => {
@@ -42,17 +44,19 @@ function fakeBunny(status: Record<string, number> = {}) {
     const request = `${init.method ?? "GET"} ${url}`;
 
     requests.push(request);
+    if (status[request]) return new Response(null, { status: status[request] });
+    if (request === getPullZone) return new Response(JSON.stringify(pullZone));
 
-    return new Response(null, { status: status[request] ?? 204 });
+    return new Response(null, { status: 204 });
   });
 
   return { requests };
 }
 
-const deletes = [
-  "DELETE https://api.bunny.net/pullzone/2",
-  "DELETE https://api.bunny.net/storagezone/1",
-];
+const getPullZone = "GET https://api.bunny.net/pullzone/2";
+const deleteStorageZone = "DELETE https://api.bunny.net/storagezone/7";
+const deletePullZone = "DELETE https://api.bunny.net/pullzone/2";
+const deletes = (requests: string[]) => requests.filter((r) => r.startsWith("DELETE "));
 
 test("destroy without --yes outside a terminal sends nothing and keeps orbitpush.json", async () => {
   const { requests } = fakeBunny();
@@ -62,30 +66,92 @@ test("destroy without --yes outside a terminal sends nothing and keeps orbitpush
   expect(existsSync("orbitpush.json")).toBe(true);
 });
 
-test("destroy deletes the pull zone, then the storage zone, then orbitpush.json", async () => {
+test("destroy deletes the storage zone the pull zone names, then the pull zone, then orbitpush.json", async () => {
   const { requests } = fakeBunny();
 
   await destroy("key", config, { yes: true, interactive: false });
 
-  expect(requests).toEqual(deletes);
+  expect(requests).toEqual([getPullZone, deleteStorageZone, deletePullZone]);
   expect(existsSync("orbitpush.json")).toBe(false);
 });
 
-test("destroy treats zones that are already gone as deleted", async () => {
-  const { requests } = fakeBunny({ [deletes[0]]: 404, [deletes[1]]: 404 });
+test("destroy counts a pull zone that bunny.net deleted with its storage zone as deleted", async () => {
+  const { requests } = fakeBunny({ status: { [deletePullZone]: 404 } });
 
   await destroy("key", config, { yes: true, interactive: false });
 
-  expect(requests).toEqual(deletes);
+  expect(deletes(requests)).toEqual([deleteStorageZone, deletePullZone]);
   expect(existsSync("orbitpush.json")).toBe(false);
 });
 
-test("destroy stops when the pull zone delete fails", async () => {
-  const { requests } = fakeBunny({ [deletes[0]]: 500 });
+test("destroy counts a storage zone that is already gone as deleted", async () => {
+  const { requests } = fakeBunny({ status: { [deleteStorageZone]: 404 } });
+
+  await destroy("key", config, { yes: true, interactive: false });
+
+  expect(deletes(requests)).toEqual([deleteStorageZone, deletePullZone]);
+  expect(existsSync("orbitpush.json")).toBe(false);
+});
+
+test("destroy rerun after both zones are gone sends no delete and removes orbitpush.json", async () => {
+  const { requests } = fakeBunny({ status: { [getPullZone]: 404 } });
+
+  await destroy("key", config, { yes: true, interactive: false });
+
+  expect(requests).toEqual([getPullZone]);
+  expect(existsSync("orbitpush.json")).toBe(false);
+});
+
+test("destroy stops and keeps orbitpush.json when the pull zone cannot be read", async () => {
+  const { requests } = fakeBunny({ status: { [getPullZone]: 500 } });
 
   await expect(destroy("key", config, { yes: true, interactive: false })).rejects.toMatchObject({
     status: 500,
   });
-  expect(requests).toEqual([deletes[0]]);
+  expect(deletes(requests)).toEqual([]);
+  expect(existsSync("orbitpush.json")).toBe(true);
+});
+
+test("destroy keeps the pull zone and orbitpush.json when the storage zone delete fails", async () => {
+  const { requests } = fakeBunny({ status: { [deleteStorageZone]: 500 } });
+
+  await expect(destroy("key", config, { yes: true, interactive: false })).rejects.toMatchObject({
+    status: 500,
+  });
+  expect(deletes(requests)).toEqual([deleteStorageZone]);
+  expect(existsSync("orbitpush.json")).toBe(true);
+});
+
+test("destroy deletes nothing when the pull zone has no storage zone origin", async () => {
+  const { requests } = fakeBunny({
+    pullZone: {
+      Id: 2,
+      Name: "site",
+      OriginType: 0,
+      StorageZoneId: 0,
+      Hostnames: [],
+      EdgeRules: [],
+    },
+  });
+
+  await expect(destroy("key", config, { yes: true, interactive: false })).rejects.toThrow();
+  expect(deletes(requests)).toEqual([]);
+  expect(existsSync("orbitpush.json")).toBe(true);
+});
+
+test("destroy deletes nothing when the pull zone's storage zone is null", async () => {
+  const { requests } = fakeBunny({
+    pullZone: {
+      Id: 2,
+      Name: "site",
+      OriginType: 0,
+      StorageZoneId: null,
+      Hostnames: [],
+      EdgeRules: [],
+    },
+  });
+
+  await expect(destroy("key", config, { yes: true, interactive: false })).rejects.toThrow();
+  expect(deletes(requests)).toEqual([]);
   expect(existsSync("orbitpush.json")).toBe(true);
 });
