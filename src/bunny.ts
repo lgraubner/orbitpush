@@ -303,7 +303,10 @@ export function storage(zone: StorageZone) {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         allowMissing: true,
       });
-      if (response.status === 404) return undefined;
+      if (response.status === 404) {
+        await response.body?.cancel();
+        return undefined;
+      }
 
       return parseJson(response, schema, path);
     },
