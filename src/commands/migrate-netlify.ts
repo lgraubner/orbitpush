@@ -109,7 +109,8 @@ export function parseRedirectsFile(text: string): Migrated {
 
     for (const token of rest) {
       const [key, values] = splitOnce(token, "=");
-      conditions[key] = [...(conditions[key] ?? []), ...values.split(",").filter(Boolean)];
+      const listed = values.split(",").filter(Boolean);
+      if (listed.length) conditions[key] = [...(conditions[key] ?? []), ...listed];
     }
 
     redirects.push({
