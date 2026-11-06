@@ -1267,6 +1267,22 @@ async function deployOutput(
   };
 }
 
+test("deploy uploads no file under .orbitpush/ from the output directory and warns about each", async () => {
+  freezeTime();
+  const { output, puts, records } = await deployOutput({
+    "index.html": "<h1>old</h1>",
+    "assets/app.js": "same",
+    ".orbitpush/stale.json": '{"version":1,"stale":{}}',
+    ".orbitpush/notes.txt": "mine",
+  });
+
+  expect(puts.filter((put) => put.includes(".orbitpush/"))).toEqual([`PUT ${RECORD_URL}`]);
+  expect(records).toEqual([{ version: 1, stale: { "gone.html": NOW.toISOString() } }]);
+  for (const file of [".orbitpush/stale.json", ".orbitpush/notes.txt"]) {
+    expect(output).toContain(`${file} is not uploaded`);
+  }
+});
+
 test("deploy counts uploaded, deleted and unchanged files without listing them", async () => {
   const { output } = await deployOutput(
     { "index.html": "new", "assets/app.js": "same", "404.html": "nope" },

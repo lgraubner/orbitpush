@@ -62,7 +62,7 @@ Untrusted data is parsed once, where it enters, into a named domain type:
 | Interactive prompts                      | the `validate` options in `src/commands/init.ts`                                                                                               |
 | `orbitpush.json`                         | `ConfigSchema` in `readConfig()` in `src/config.ts`, then `redirectRules()` and `headerRules()` in `src/rules.ts` for what bunny.net can serve |
 | `netlify.toml`, `_redirects`, `_headers` | `parseNetlifyToml()`, `parseRedirectsFile()` and `parseHeadersFile()` in `src/commands/migrate-netlify.ts`, only for `migrate-netlify`         |
-| bunny.net API responses                  | the zod schemas in `src/bunny.ts`, through `apiJson()` and `storage().list()`                                                                  |
+| bunny.net API responses                  | the zod schemas in `src/bunny.ts`, through `apiJson()`, `storage().list()` and `storage().read()`, which reads the stale record                |
 
 - Hand the parsed value on, not the raw input. Code behind the boundary takes the domain type and does not validate again. `parseArgs()` parses the `mri` output, which is typed as `any`, so no flag reaches `init` unchecked.
 - Expose domain types across a boundary, not the transport, storage, or wire types behind it.
