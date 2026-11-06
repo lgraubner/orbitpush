@@ -140,6 +140,22 @@ test("never copies Basic-Auth from _headers or shows its password", async () => 
   expect(stderr).not.toContain("s3cretpw");
 });
 
+test.each([
+  ["above the first path", "  Basic-Auth: alice:s3cretpw\n/admin/*\n  X-A: 1\n"],
+  ["without indentation", "/admin/*\nBasic-Auth: alice:s3cretpw\n  X-A: 1\n"],
+])("never copies or shows a Basic-Auth password %s", async (_case, file) => {
+  await setup();
+  await writeFile("public/_headers", file);
+
+  await migrateNetlify();
+
+  const written = await readFile("orbitpush.json", "utf8");
+  expect(JSON.parse(written).headers).toEqual([{ for: "/admin/*", values: { "X-A": "1" } }]);
+  expect(written).not.toContain("s3cretpw");
+  expect(stderr).toMatch(/Basic-Auth/);
+  expect(stderr).not.toContain("s3cretpw");
+});
+
 test("skips a _headers path without header lines, with a warning", () => {
   const { headers, warnings } = parseHeadersFile("/empty\n/b\n  X-B: 2\n");
 

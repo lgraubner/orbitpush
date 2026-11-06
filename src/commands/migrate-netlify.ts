@@ -131,20 +131,20 @@ export function parseHeadersFile(text: string): Migrated {
   const blocks: { n: number; path: string; values: Map<string, [string, string[]]> }[] = [];
 
   for (const [n, line, indented] of lines(text)) {
+    const [name, value] = splitOnce(line, ":").map((part) => part.trim());
+    if (name.toLowerCase() === "basic-auth") {
+      warnings.push(`_headers:${n} not migrated (Basic-Auth is not supported)`);
+      continue;
+    }
+
     if (!indented) {
       blocks.push({ n, path: line, values: new Map() });
       continue;
     }
 
     const block = blocks.at(-1);
-    const [name, value] = splitOnce(line, ":").map((part) => part.trim());
     if (!block || !name || !line.includes(":")) {
       warnings.push(`_headers:${n} not migrated (expected "Name: value" below a path): ${line}`);
-      continue;
-    }
-
-    if (name.toLowerCase() === "basic-auth") {
-      warnings.push(`_headers:${n} not migrated (Basic-Auth is not supported)`);
       continue;
     }
 
