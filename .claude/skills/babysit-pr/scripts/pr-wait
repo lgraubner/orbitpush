@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """pr-wait: watch one GitHub pull request and print one line per real event.
 
-  pr-wait <pr> [--repo owner/name] [--until green|any-change] [--interval 20]
+  pr-wait <pr> [--repo owner/name] [--until green|any-change|merged] [--interval N]
 
 <pr> is a PR number or PR URL. Without --repo, the repo comes from the URL or
 from the current checkout. Stdout carries only events, one line each, so a
@@ -12,12 +12,17 @@ Progress and errors that do not end the run go to stderr.
   green       required checks passed on the current head (every CI check when
               the base branch requires none) (default)
   any-change  stop after the first poll that prints an event
+  merged      wait for a ready PR to merge; stop early on the first event other
+              than a checks summary, since it needs the agent
+
+--interval is seconds between polls: 20 by default, 60 with --until merged,
+because a merge can take days.
 
 Exit codes
   0  the --until condition is met, or the PR merged
   1  the condition cannot be met without action: a required check failed, the
      branch conflicts with its base, the PR closed, or GitHub stayed
-     unreachable
+     unreachable. With --until merged, also any other event.
   2  bad arguments, unknown PR, or another pr-wait already watches this PR
 
 Events
@@ -435,7 +440,10 @@ class Watcher:
                 self.finish(1, [dirty_line])
             if fail_lines:
                 self.finish(1, fail_lines)
-            if green:
+            if self.until == "merged":
+                if self.events:
+                    self.finish(1)
+            elif green:
                 self.reported.add(checks_key)
                 self.finish(0, [f"green on {short}: {summary}{self.behind(base, base_oid, head)}"])
         if all_done and (stable or self.baseline):
@@ -468,12 +476,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="pr-wait", description="Watch a GitHub PR and print one line per real event.")
     parser.add_argument("pr", nargs="?", help="PR number or URL")
     parser.add_argument("--repo", help="owner/name (default: from the URL or the current checkout)")
-    parser.add_argument("--until", choices=("green", "any-change"), default="green")
-    parser.add_argument("--interval", type=int, default=20, help="seconds between polls (default 20, min 5)")
+    parser.add_argument("--until", choices=("green", "any-change", "merged"), default="green")
+    parser.add_argument("--interval", type=int, help="seconds between polls (default 20, 60 with --until merged, min 5)")
     args = parser.parse_args()
     repo, pr = parse_target(args.pr, args.repo)
     _lock = lock(repo, pr)
-    Watcher(repo, pr, args.until, max(args.interval, 5)).run()
+    interval = args.interval or (60 if args.until == "merged" else 20)
+    Watcher(repo, pr, args.until, max(interval, 5)).run()
 
 
 if __name__ == "__main__":

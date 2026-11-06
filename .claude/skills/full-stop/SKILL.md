@@ -13,6 +13,7 @@ The user is not watching; your messages go unread until you stop. The task is wh
 
 - A worktree with its branch, commits, a push of that branch, and a PR. This replaces the ask-before-publishing rule in `CLAUDE.md` for this PR.
 - `--force-with-lease` on that branch after a rebase.
+- Once the PR merges, removing that worktree and deleting the local branch.
 - The test methods proof needs (run the app, drive the browser, take screenshots) without asking first. This does not bypass a harness approval prompt.
 
 Not granted: merging, auto-merge, pushing the default branch, other branches, closing PRs, deleting data, production, anything outside the repo.
@@ -27,9 +28,14 @@ Not granted: merging, auto-merge, pushing the default branch, other branches, cl
 6. `/code-review` the diff, at `medium` when it changes only tests: lower levels skip test files. Fix real findings in the case the brief intends; decline the rest with a reason and list them as follow-ups in the PR. Review again after fixes, at most three rounds; stop when a round finds nothing that blocks. A finding still open when the rounds run out is not approved: report it.
 7. Rename the branch with `git branch -m <type>/<slug>`: the Conventional Commit type of the change and a short kebab-case name for the task, such as `fix/flaky-motion-origin`. Rebase onto the latest default branch, then file the PR with `file-pr`.
 8. Babysit it with `babysit-pr` until `pr-wait` exits 0. If the PR has no checks, `pr-wait` would wait forever: skip this step and say so in the report.
-9. Report: PR link, head commit, proof, review outcome, each decision you made for the user, and what remains unverified.
+9. Report: PR link, head commit, proof, review outcome, each decision you made for the user, and what remains unverified. Then start step 10 and end your turn.
+10. Wait for the merge with `pr-wait <pr> --until merged`, run as `babysit-pr` says for that mode. On exit 1, handle the event as `babysit-pr` says, then start step 10 again, after step 8 if you pushed. If the PR closed without merging, keep everything and report it. When it exits 0 on a merge, clean up:
+    - Confirm `git status --porcelain` prints nothing and `git rev-parse HEAD` equals the PR's `headRefOid`. If either fails, keep everything and report why.
+    - `ExitWorktree` with `action: remove` and `discard_changes: true`. A squash merge leaves the branch's commits off the default branch, so the tool asks for it.
+    - Removal keeps the branch renamed at step 7: `git branch -D` it, then `git fetch --prune`.
+    - Report in one line that the PR merged and the worktree and branch are gone.
 
-Stay active from step 1 to 9. Ending your turn while checks are pending ends the work.
+Stay active from step 1 to 9. Ending your turn while checks are pending ends the work. Step 10 wakes you when `pr-wait` exits.
 
 ## Ready gate
 
