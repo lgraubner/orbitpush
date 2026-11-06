@@ -194,13 +194,6 @@ async function readOutput(dir: string, { migrated }: { migrated: boolean }) {
       }
     }
 
-    if (path.startsWith(ORBITPUSH_DIR)) {
-      log.warn(
-        `${path} is not uploaded: ${ORBITPUSH_DIR} in the storage zone belongs to orbitpush.`,
-      );
-      continue;
-    }
-
     // Netlify reads these files and never serves them, and _headers can hold passwords
     if (RULE_FILES.includes(path)) {
       log.warn(
@@ -212,6 +205,13 @@ async function readOutput(dir: string, { migrated }: { migrated: boolean }) {
     }
 
     if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+
+    if (path.startsWith(ORBITPUSH_DIR)) {
+      log.warn(
+        `${path} is not uploaded: ${ORBITPUSH_DIR} in the storage zone belongs to orbitpush.`,
+      );
+      continue;
+    }
 
     const checksum = createHash("sha256")
       .update(await readFile(absolute))
@@ -225,14 +225,15 @@ async function readOutput(dir: string, { migrated }: { migrated: boolean }) {
 
 function sortStale(paths: string[], record: StaleRecord | undefined, now: Date) {
   const expired: string[] = [];
-  const kept: Record<string, string> = {};
+  const kept = new Map<string, string>();
   for (const path of [...paths].sort()) {
-    const since = record?.stale[path] ?? now.toISOString();
+    const since =
+      record && Object.hasOwn(record.stale, path) ? record.stale[path] : now.toISOString();
     if (now.getTime() - Date.parse(since) > STALE_GRACE_MS) expired.push(path);
-    else kept[path] = since;
+    else kept.set(path, since);
   }
 
-  return { expired, kept };
+  return { expired, kept: Object.fromEntries(kept) };
 }
 
 function isHtml(path: string) {
