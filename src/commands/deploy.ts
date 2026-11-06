@@ -22,7 +22,7 @@ import {
 } from "@/bunny.ts";
 import type { Config } from "@/config.ts";
 import { isMissing } from "@/files.ts";
-import { log, style } from "@/log.ts";
+import { count, log, style } from "@/log.ts";
 import { managedRules } from "@/rules.ts";
 
 const RULE_FILES = ["_headers", "_redirects"];
@@ -118,10 +118,6 @@ export async function deploy(
 function logChanges(subject: string, counts: [string, number][]) {
   const parts = counts.filter(([, n]) => n > 0).map(([verb, n]) => `${n} ${verb}`);
   if (parts.length) log.step(`${subject}: ${parts.join(", ")}`);
-}
-
-function count(n: number, noun: string) {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
 function logTarget(config: Config, zone: StorageZone, pullZone: PullZone) {
