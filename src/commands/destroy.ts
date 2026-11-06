@@ -36,14 +36,17 @@ export async function destroy(
 
     log.step(`Deleting pull zone ${config.name} (${config.pullZoneId})`);
     await deleteIfExists(apiKey, `/pullzone/${config.pullZoneId}`);
-  } else {
-    log.warn(
-      `Pull zone ${config.pullZoneId} is already gone, so its storage zone cannot be found. If a storage zone named ${config.name} is left, delete it in the bunny.net dashboard.`,
-    );
+
+    await rm(CONFIG_FILE, { force: true });
+    log.success(`Deleted ${config.name} from bunny.net and removed ${CONFIG_FILE}`);
+    return;
   }
 
+  log.warn(
+    `Pull zone ${config.pullZoneId} is already gone, so its storage zone cannot be found. If a storage zone named ${config.name} is left, delete it in the bunny.net dashboard.`,
+  );
   await rm(CONFIG_FILE, { force: true });
-  log.success(`Deleted ${config.name} from bunny.net and removed ${CONFIG_FILE}`);
+  log.success(`Removed ${CONFIG_FILE}`);
 }
 
 async function deleteIfExists(apiKey: string, path: string) {
