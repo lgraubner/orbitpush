@@ -87,9 +87,8 @@ jobs:
                   else
                     echo "published=false" >> "$GITHUB_OUTPUT"
                   fi
-            # prepack type-checks and builds dist/cli.js
+            # npm authenticates through trusted publishing (OIDC) and adds provenance itself.
+            # prepack type-checks and builds dist/cli.js.
             - name: Publish
               if: steps.version.outputs.published == 'false'
-              run: npm publish --provenance --access public
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+              run: npm publish
