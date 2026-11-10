@@ -60,6 +60,9 @@ jobs:
         if: ${{ github.event_name == 'push' }}
         runs-on: ubuntu-24.04
         timeout-minutes: 10
+        permissions:
+            contents: read
+            id-token: write
         concurrency:
             group: publish
             cancel-in-progress: false
@@ -87,6 +90,6 @@ jobs:
             # prepack type-checks and builds dist/cli.js
             - name: Publish
               if: steps.version.outputs.published == 'false'
-              run: npm publish
+              run: npm publish --provenance --access public
               env:
                   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

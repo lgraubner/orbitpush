@@ -2,7 +2,25 @@
   "name": "orbitpush",
   "version": "0.1.0",
   "description": "Deploy static sites to your own bunny.net storage zone and pull zone",
+  "keywords": [
+    "bunny.net",
+    "bunnycdn",
+    "cdn",
+    "cli",
+    "deploy",
+    "netlify",
+    "static-site"
+  ],
+  "homepage": "https://github.com/lgraubner/orbitpush#readme",
+  "bugs": {
+    "url": "https://github.com/lgraubner/orbitpush/issues"
+  },
   "license": "MIT",
+  "author": "Lars Graubner",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lgraubner/orbitpush.git"
+  },
   "bin": {
     "orbitpush": "dist/cli.js"
   },
