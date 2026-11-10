@@ -114,6 +114,7 @@ Every command that changes a storage zone, pull zone, or edge rule converges to 
 - `GLOSSARY.md` is the glossary. Use its terms in code, CLI output, and conversation. When a discussion settles a new or sharper term, update it in the same change.
 - Record a decision in `docs/adr/` only when it is hard to reverse, would surprise a reader without context, and came from a real trade-off.
 - `README.md` describes current behavior. Update it, and `schema.json` for config changes, in the same change when that behavior changes.
+- `CHANGELOG.md` lists user-visible changes. Add each one under `Unreleased` in the same change; a release moves them under its version.
 - Keep credentials, secret values, production identifiers, and private URLs out of documentation.
 
 ## Tests
