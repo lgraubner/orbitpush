@@ -13,22 +13,27 @@ for (const s of Object.values(sites)) {
     test.afterAll(() => s.cleanup());
 
     if (s === sites.multiPage) {
-      test("redeploy uploads changes, keeps removed files as stale, deletes removed rules, purges", async () => {
+      test("redeploy uploads changes, deletes a removed page, keeps a removed script as stale, deletes removed rules, purges", async () => {
         const pub = join(s.dir, "public");
         const index = join(pub, "index.html");
         const html = await readFile(index, "utf8");
         await writeFile(index, html.replace("</body>", "<p>redeployed</p></body>"));
         await rm(join(pub, "contact.html"));
+        await rm(join(pub, "assets", "app.js"));
         const config = join(s.dir, "orbitpush.json");
         const json: object = JSON.parse(await readFile(config, "utf8"));
         await writeFile(config, JSON.stringify({ ...json, headers: [] }));
 
         const result = await s.cli("deploy");
         expect(result.code).toBe(0);
-        expect(result.stderr).toMatch(/Files: .*1 kept/);
-        expect(await s.status(`${s.cdnUrl}/contact.html`)).toBe(200);
+        expect(result.stderr).toMatch(/Files: .*1 kept, 1 deleted/);
+        await untilStatus(s, `${s.cdnUrl}/contact.html`, 404);
+        expect(await s.status(`${s.cdnUrl}/assets/app.js`)).toBe(200);
         const record: unknown = JSON.parse((await s.get(`${s.cdnUrl}/.orbitpush/stale.json`)).body);
-        expect(record).toMatchObject({ version: 1, stale: { "contact.html": expect.any(String) } });
+        expect(record).toMatchObject({
+          version: 1,
+          stale: { "assets/app.js": expect.any(String) },
+        });
 
         await expect
           .poll(async () => (await s.get(`${s.cdnUrl}/`)).headers["x-e2e-block"], {

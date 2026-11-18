@@ -66,7 +66,7 @@ const folder = (ObjectName: string) => ({
 });
 
 const defaultListing: Record<string, ReturnType<typeof object | typeof folder>[]> = {
-  "": [folder("assets"), object("index.html", sha("<h1>old</h1>")), object("gone.html")],
+  "": [folder("assets"), object("index.html", sha("<h1>old</h1>")), object("gone.js")],
   "assets/": [object("app.js", sha("same").toLowerCase())],
 };
 
@@ -241,7 +241,7 @@ async function outputDir() {
 test("deploy uploads changed files, deletes expired stale ones, syncs managed rules, rewrites the stale record and purges", async () => {
   const dir = await outputDir();
   const { writes, bodies, records } = fakeBunny({
-    staleRecord: { version: 1, stale: { "gone.html": LONG_AGO } },
+    staleRecord: { version: 1, stale: { "gone.js": LONG_AGO } },
   });
 
   await deploy("key", config(dir, "/a /b\n/c /d"));
@@ -254,7 +254,7 @@ test("deploy uploads changed files, deletes expired stale ones, syncs managed ru
     "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
     "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
     "DELETE https://api.bunny.net/pullzone/2/edgerules/old",
-    "DELETE https://storage.bunnycdn.com/site/gone.html",
+    "DELETE https://storage.bunnycdn.com/site/gone.js",
     `PUT ${RECORD_URL}`,
     "POST https://api.bunny.net/pullzone/2/purgeCache",
   ]);
@@ -1133,7 +1133,7 @@ test("deploy starts no further upload once one has failed", async () => {
 test.each([
   ["a bunny.net API request", "https://api.bunny.net/storagezone/1", /GET \/storagezone\/1 failed/],
   ["a storage zone listing", "https://storage.bunnycdn.com/site/", /GET \/ failed/],
-  ["a stale file deletion", "https://storage.bunnycdn.com/site/gone.html", /DELETE \/gone\.html/],
+  ["a stale file deletion", "https://storage.bunnycdn.com/site/gone.js", /DELETE \/gone\.js/],
   ["a stale record read", RECORD_URL, /\.orbitpush\/stale\.json/],
   ["a file upload", "https://storage.bunnycdn.com/site/index.html", /PUT \/index\.html failed/],
 ])("deploy fails instead of hanging when %s never answers", async (_, url, message) => {
@@ -1142,7 +1142,7 @@ test.each([
   const dir = await outputDir();
   fakeBunny({
     hang: url,
-    staleRecord: { version: 1, stale: { "gone.html": LONG_AGO } },
+    staleRecord: { version: 1, stale: { "gone.js": LONG_AGO } },
   });
 
   await expect(deploy("key", config(dir))).rejects.toThrow(message);
@@ -1248,7 +1248,7 @@ test("deploy uploads no file under .orbitpush/ from the output directory and war
   });
 
   expect(puts.filter((put) => put.includes(".orbitpush/"))).toEqual([`PUT ${RECORD_URL}`]);
-  expect(records).toEqual([{ version: 1, stale: { "gone.html": NOW.toISOString() } }]);
+  expect(records).toEqual([{ version: 1, stale: { "gone.js": NOW.toISOString() } }]);
   for (const file of [".orbitpush/stale.json", ".orbitpush/notes.txt"]) {
     expect(output).toContain(`${file} is not uploaded`);
   }
@@ -1258,11 +1258,11 @@ test("deploy counts uploaded, deleted and unchanged files without listing them",
   const { output } = await deployOutput(
     { "index.html": "new", "assets/app.js": "same", "404.html": "nope" },
     {},
-    { staleRecord: { version: 1, stale: { "gone.html": LONG_AGO } } },
+    { staleRecord: { version: 1, stale: { "gone.js": LONG_AGO } } },
   );
 
   expect(output).toMatch(/^› Files: 2 uploaded, 1 deleted, 1 unchanged$/m);
-  for (const path of ["404.html", "index.html", "gone.html", "app.js"]) {
+  for (const path of ["404.html", "index.html", "gone.js", "app.js"]) {
     expect(output).not.toContain(path);
   }
 });
@@ -1281,7 +1281,7 @@ test.each([
     {
       staleRecord: {
         version: 1,
-        stale: { "gone.html": LONG_AGO, "assets/app.js": LONG_AGO },
+        stale: { "gone.js": LONG_AGO, "assets/app.js": LONG_AGO },
       },
     },
   );
@@ -1436,7 +1436,7 @@ test("deploy keeps every stale file on the first deploy and records it as stale 
   await deploy("key", config(dir, "/a /b\n/c /d"));
 
   expect(deletes(writes)).toEqual([]);
-  expect(records).toEqual([{ version: 1, stale: { "gone.html": NOW.toISOString() } }]);
+  expect(records).toEqual([{ version: 1, stale: { "gone.js": NOW.toISOString() } }]);
   expect(writes.slice(-3)).toEqual([
     "DELETE https://api.bunny.net/pullzone/2/edgerules/old",
     `PUT ${RECORD_URL}`,
@@ -1454,10 +1454,7 @@ test.each([
   ["not JSON", "{not json"],
   ["an unknown version", JSON.stringify({ version: 2, stale: {} })],
   ["no stale map", JSON.stringify({ version: 1 })],
-  [
-    "a date that is not a date",
-    JSON.stringify({ version: 1, stale: { "gone.html": "yesterday" } }),
-  ],
+  ["a date that is not a date", JSON.stringify({ version: 1, stale: { "gone.js": "yesterday" } })],
 ])("deploy fails before any write when the stale record is %s", async (_, body) => {
   const dir = await outputDir();
   const { writes } = fakeBunny({ staleRecord: body });
@@ -1470,14 +1467,14 @@ test.each([
 
 test.each([
   ["keeps", 7 * DAY, []],
-  ["deletes", 7 * DAY + 1, ["DELETE https://storage.bunnycdn.com/site/gone.html"]],
+  ["deletes", 7 * DAY + 1, ["DELETE https://storage.bunnycdn.com/site/gone.js"]],
 ])("deploy %s a stale file stale for %i ms", async (_, age, expected) => {
   freezeTime();
   const { writes } = await deployOutput(
     deployed,
     {},
     {
-      staleRecord: { version: 1, stale: { "gone.html": ago(age) } },
+      staleRecord: { version: 1, stale: { "gone.js": ago(age) } },
     },
   );
 
@@ -1490,14 +1487,14 @@ test("deploy keeps the original date of a stale file it keeps while recording a 
   const { writes, records } = await deployOutput(
     { "index.html": "new" },
     {},
-    { staleRecord: { version: 1, stale: { "gone.html": since } } },
+    { staleRecord: { version: 1, stale: { "gone.js": since } } },
   );
 
   expect(deletes(writes)).toEqual([]);
   expect(records).toEqual([
     {
       version: 1,
-      stale: { "gone.html": since, "assets/app.js": NOW.toISOString() },
+      stale: { "gone.js": since, "assets/app.js": NOW.toISOString() },
     },
   ]);
 });
@@ -1510,7 +1507,7 @@ test("deploy writes no stale record when its content does not change", async () 
     {
       staleRecord: {
         version: 1,
-        stale: { "gone.html": ago(DAY) },
+        stale: { "gone.js": ago(DAY) },
       },
     },
   );
@@ -1519,7 +1516,7 @@ test("deploy writes no stale record when its content does not change", async () 
 });
 
 test("deploy writes no stale record when there is neither a stale file nor a record", async () => {
-  const { puts } = await deployOutput({ ...deployed, "gone.html": "X" });
+  const { puts } = await deployOutput({ ...deployed, "gone.js": "X" });
 
   expect(puts).not.toContain(`PUT ${RECORD_URL}`);
 });
@@ -1531,12 +1528,12 @@ test("deploy drops a path that is back in the build from the stale record withou
     {
       staleRecord: {
         version: 1,
-        stale: { "index.html": LONG_AGO, "gone.html": LONG_AGO },
+        stale: { "index.html": LONG_AGO, "gone.js": LONG_AGO },
       },
     },
   );
 
-  expect(deletes(writes)).toEqual(["DELETE https://storage.bunnycdn.com/site/gone.html"]);
+  expect(deletes(writes)).toEqual(["DELETE https://storage.bunnycdn.com/site/gone.js"]);
   expect(records).toEqual([{ version: 1, stale: {} }]);
 });
 
@@ -1549,13 +1546,13 @@ test("deploy drops stale record entries for paths no longer in the storage zone"
     {
       staleRecord: {
         version: 1,
-        stale: { "gone.html": since, "vanished.js": LONG_AGO },
+        stale: { "gone.js": since, "vanished.js": LONG_AGO },
       },
     },
   );
 
   expect(deletes(writes)).toEqual([]);
-  expect(records).toEqual([{ version: 1, stale: { "gone.html": since } }]);
+  expect(records).toEqual([{ version: 1, stale: { "gone.js": since } }]);
 });
 
 const withOrbitpushFolder = {
@@ -1570,11 +1567,11 @@ test("deploy never deletes, records or counts files under .orbitpush/", async ()
     {},
     {
       listing: withOrbitpushFolder,
-      staleRecord: { version: 1, stale: { "gone.html": LONG_AGO } },
+      staleRecord: { version: 1, stale: { "gone.js": LONG_AGO } },
     },
   );
 
-  expect(deletes(writes)).toEqual(["DELETE https://storage.bunnycdn.com/site/gone.html"]);
+  expect(deletes(writes)).toEqual(["DELETE https://storage.bunnycdn.com/site/gone.js"]);
   expect(records).toEqual([{ version: 1, stale: {} }]);
   expect(output).toMatch(/^› Files: 2 uploaded, 1 deleted, 1 unchanged$/m);
 });
@@ -1583,19 +1580,20 @@ test("deploy leaves files under .orbitpush/ out of a new stale record", async ()
   freezeTime();
   const { output, records } = await deployOutput(deployed, {}, { listing: withOrbitpushFolder });
 
-  expect(records).toEqual([{ version: 1, stale: { "gone.html": NOW.toISOString() } }]);
+  expect(records).toEqual([{ version: 1, stale: { "gone.js": NOW.toISOString() } }]);
   expect(output).toMatch(/^› Files: 2 uploaded, 1 kept, 1 unchanged$/m);
 });
 
-test("deploy records a stale file named like an Object.prototype member and deletes it once expired", async () => {
+test("deploy without index.html records a stale file named like an Object.prototype member and deletes it once expired", async () => {
   freezeTime();
+  const withoutIndex = { "assets/app.js": "same", "404.html": "nope" };
   const listing = {
     "": [...defaultListing[""], object("toString"), object("constructor")],
     "assets/": defaultListing["assets/"],
   };
 
   const first = await deployOutput(
-    deployed,
+    withoutIndex,
     {},
     { listing, staleRecord: { version: 1, stale: {} } },
   );
@@ -1604,7 +1602,8 @@ test("deploy records a stale file named like an Object.prototype member and dele
       version: 1,
       stale: {
         constructor: NOW.toISOString(),
-        "gone.html": NOW.toISOString(),
+        "gone.js": NOW.toISOString(),
+        "index.html": NOW.toISOString(),
         toString: NOW.toISOString(),
       },
     },
@@ -1612,12 +1611,135 @@ test("deploy records a stale file named like an Object.prototype member and dele
 
   vi.restoreAllMocks();
   const later = await deployOutput(
-    deployed,
+    withoutIndex,
     {},
     { listing, staleRecord: { version: 1, stale: { constructor: LONG_AGO, toString: LONG_AGO } } },
   );
   expect(deletes(later.writes)).toEqual([
     "DELETE https://storage.bunnycdn.com/site/constructor",
     "DELETE https://storage.bunnycdn.com/site/toString",
+  ]);
+});
+
+const storageUrl = (path: string) => `https://storage.bunnycdn.com/site/${path}`;
+const listingWith = (...paths: string[]) => ({
+  "": [folder("assets"), object("index.html", sha("<h1>old</h1>")), ...paths.map((p) => object(p))],
+  "assets/": defaultListing["assets/"],
+});
+
+test("deploy deletes a stale page, PDF and image on the deploy that first finds them and keeps a stale asset next to them", async () => {
+  freezeTime();
+  const { writes, records } = await deployOutput(
+    deployed,
+    {},
+    { listing: listingWith("old.html", "doc.pdf", "photo.png", "gone.js") },
+  );
+
+  expect([...deletes(writes)].sort()).toEqual(
+    ["doc.pdf", "old.html", "photo.png"].map((p) => `DELETE ${storageUrl(p)}`),
+  );
+  expect(records).toEqual([{ version: 1, stale: { "gone.js": NOW.toISOString() } }]);
+});
+
+test.each([
+  "a.js",
+  "a.mjs",
+  "a.css",
+  "a.wasm",
+  "a.json",
+  "a.woff2",
+  "a.woff",
+  "a.ttf",
+  "a.otf",
+  "app.js.map",
+  "APP.JS",
+  "app.min.js",
+])("deploy keeps the stale asset %s on first sight and records it", async (path) => {
+  freezeTime();
+  const { writes, records } = await deployOutput(deployed, {}, { listing: listingWith(path) });
+
+  expect(deletes(writes)).toEqual([]);
+  expect(records).toEqual([{ version: 1, stale: { [path]: NOW.toISOString() } }]);
+});
+
+test.each(["a.png", "a.svg", "LICENSE", "js", "a.html", "a.pdf"])(
+  "deploy deletes the stale non-asset %s on first sight without recording it",
+  async (path) => {
+    freezeTime();
+    const { writes, records } = await deployOutput(deployed, {}, { listing: listingWith(path) });
+
+    expect(deletes(writes)).toEqual([`DELETE ${storageUrl(path)}`]);
+    expect(records).toEqual([]);
+  },
+);
+
+test("deploy deletes a recently recorded non-asset and drops it from the stale record", async () => {
+  freezeTime();
+  const { writes, records } = await deployOutput(
+    deployed,
+    {},
+    {
+      listing: listingWith("old.html"),
+      staleRecord: { version: 1, stale: { "old.html": ago(DAY) } },
+    },
+  );
+
+  expect(deletes(writes)).toEqual([`DELETE ${storageUrl("old.html")}`]);
+  expect(records).toEqual([{ version: 1, stale: {} }]);
+});
+
+test("deploy deletes a stale page and PDF when the output directory has index.html", async () => {
+  const { writes, records, output } = await deployOutput(
+    deployed,
+    {},
+    { listing: listingWith("old.html", "doc.pdf") },
+  );
+
+  expect([...deletes(writes)].sort()).toEqual([
+    `DELETE ${storageUrl("doc.pdf")}`,
+    `DELETE ${storageUrl("old.html")}`,
+  ]);
+  expect(records).toEqual([]);
+  expect(output).not.toMatch(/index\.html/);
+});
+
+test("deploy keeps and records a stale page and PDF and warns when the output directory has no index.html", async () => {
+  freezeTime();
+  const { writes, records, output } = await deployOutput(
+    { "assets/app.js": "same", "404.html": "nope" },
+    {},
+    { listing: listingWith("old.html", "doc.pdf") },
+  );
+
+  expect(deletes(writes)).toEqual([]);
+  expect(records).toEqual([
+    {
+      version: 1,
+      stale: {
+        "doc.pdf": NOW.toISOString(),
+        "index.html": NOW.toISOString(),
+        "old.html": NOW.toISOString(),
+      },
+    },
+  ]);
+  expect(output).toMatch(/index\.html/);
+});
+
+test("deploy sends the immediate delete of a stale page after the uploads and the edge rule sync, before the purge", async () => {
+  const dir = await outputDir();
+  const { writes } = fakeBunny({ listing: listingWith("old.html") });
+
+  await deploy("key", config(dir, "/a /b\n/c /d"));
+
+  expect(writes).toEqual([
+    "PUT https://storage.bunnycdn.com/site/404.html",
+    "PUT https://storage.bunnycdn.com/site/index.html",
+    "POST https://api.bunny.net/storagezone/1",
+    "POST https://api.bunny.net/pullzone/2",
+    "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
+    "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
+    "DELETE https://api.bunny.net/pullzone/2/edgerules/old",
+    "DELETE https://storage.bunnycdn.com/site/old.html",
+    "POST https://api.bunny.net/pullzone/2/purgeCache",
   ]);
 });

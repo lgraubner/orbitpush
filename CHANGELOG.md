@@ -4,6 +4,10 @@ User-visible changes to orbitpush: commands, flags, exit codes, terminal output,
 
 ## Unreleased
 
+### Changed
+
+- `deploy` deletes stale HTML pages, PDFs, images and other files on the deploy that drops them, so a removed page stops being served right away. Only stale `.js`, `.mjs`, `.css`, `.wasm`, `.json`, font and source map files, which open pages of the previous build can still request, stay for 7 days. Without an `index.html` in the output, deploy deletes stale files only after 7 days.
+
 ## 0.1.1 - 2026-11-10
 
 ### Changed
