@@ -1484,6 +1484,76 @@ test.each([
   expect(deletes(writes)).toEqual(expected);
 });
 
+test.each([
+  ["keeps", 30, 7 * DAY, []],
+  ["keeps", 30, 30 * DAY, []],
+  ["deletes", 30, 30 * DAY + 1, ["DELETE https://storage.bunnycdn.com/site/gone.html"]],
+  ["keeps", 1, DAY, []],
+  ["deletes", 1, DAY + 1, ["DELETE https://storage.bunnycdn.com/site/gone.html"]],
+  ["deletes", 1, 2 * DAY, ["DELETE https://storage.bunnycdn.com/site/gone.html"]],
+  ["keeps", 7, -DAY, []],
+])(
+  "deploy %s a stale file when staleDays is %i and it is stale for %i ms",
+  async (_, staleDays, age, expected) => {
+    freezeTime();
+    const { writes } = await deployOutput(
+      deployed,
+      { staleDays },
+      { staleRecord: { version: 1, stale: { "gone.html": ago(age) } } },
+    );
+
+    expect(deletes(writes)).toEqual(expected);
+  },
+);
+
+test("deploy with staleDays 0 deletes a file on the deploy that first finds it stale, after uploads and the edge rule sync, and records nothing", async () => {
+  freezeTime();
+  const dir = await outputDir();
+  vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { writes, records } = fakeBunny();
+
+  await deploy("key", { ...config(dir, "/a /b\n/c /d"), staleDays: 0 });
+
+  expect(records).toEqual([]);
+  expect(writes).toEqual([
+    "PUT https://storage.bunnycdn.com/site/404.html",
+    "PUT https://storage.bunnycdn.com/site/index.html",
+    "POST https://api.bunny.net/storagezone/1",
+    "POST https://api.bunny.net/pullzone/2",
+    "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
+    "POST https://api.bunny.net/pullzone/2/edgerules/addOrUpdate",
+    "DELETE https://api.bunny.net/pullzone/2/edgerules/old",
+    "DELETE https://storage.bunnycdn.com/site/gone.html",
+    "POST https://api.bunny.net/pullzone/2/purgeCache",
+  ]);
+});
+
+test("deploy with staleDays 0 deletes recorded and newly stale files and rewrites the record empty", async () => {
+  freezeTime();
+  const { writes, records } = await deployOutput(
+    { "index.html": "new" },
+    { staleDays: 0 },
+    { staleRecord: { version: 1, stale: { "gone.html": ago(0) } } },
+  );
+
+  expect(deletes(writes).sort()).toEqual([
+    "DELETE https://storage.bunnycdn.com/site/assets/app.js",
+    "DELETE https://storage.bunnycdn.com/site/gone.html",
+  ]);
+  expect(records).toEqual([{ version: 1, stale: {} }]);
+});
+
+test("deploy with staleDays 0 deletes a stale file recorded later than its own clock", async () => {
+  freezeTime();
+  const { writes } = await deployOutput(
+    deployed,
+    { staleDays: 0 },
+    { staleRecord: { version: 1, stale: { "gone.html": ago(-DAY) } } },
+  );
+
+  expect(deletes(writes)).toEqual(["DELETE https://storage.bunnycdn.com/site/gone.html"]);
+});
+
 test("deploy keeps the original date of a stale file it keeps while recording a new one", async () => {
   freezeTime();
   const since = ago(3 * DAY);

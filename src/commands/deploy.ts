@@ -23,13 +23,13 @@ import {
   storage,
   syncRules,
 } from "@/bunny.ts";
-import type { Config } from "@/config.ts";
+import { type Config, DEFAULT_STALE_DAYS } from "@/config.ts";
 import { isMissing } from "@/files.ts";
 import { count, log, style } from "@/log.ts";
 import { managedRules } from "@/rules.ts";
 
 const RULE_FILES = ["_headers", "_redirects"];
-const STALE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export async function deploy(
   apiKey: string,
@@ -61,7 +61,7 @@ export async function deploy(
   const { expired, kept } = partitionStale(
     [...remote.keys()].filter((path) => !files.has(path) && !path.startsWith(ORBITPUSH_DIR)),
     record,
-    new Date(),
+    { now: new Date(), graceMs: (config.staleDays ?? DEFAULT_STALE_DAYS) * DAY_MS },
   );
 
   let uploaded = 0;
@@ -218,13 +218,17 @@ async function readOutput(dir: string, { migrated }: { migrated: boolean }) {
   return files;
 }
 
-function partitionStale(paths: string[], record: StaleRecord | undefined, now: Date) {
+function partitionStale(
+  paths: string[],
+  record: StaleRecord | undefined,
+  { now, graceMs }: { now: Date; graceMs: number },
+) {
   const expired: string[] = [];
   const kept = new Map<string, string>();
   for (const path of [...paths].sort()) {
     const since =
       record && Object.hasOwn(record.stale, path) ? record.stale[path] : now.toISOString();
-    if (now.getTime() - Date.parse(since) > STALE_GRACE_MS) expired.push(path);
+    if (graceMs === 0 || now.getTime() - Date.parse(since) > graceMs) expired.push(path);
     else kept.set(path, since);
   }
 

@@ -4,6 +4,10 @@ User-visible changes to orbitpush: commands, flags, exit codes, terminal output,
 
 ## Unreleased
 
+### Added
+
+- `staleDays` in `orbitpush.json` sets how many days `deploy` keeps a stale file before deleting it. It defaults to 7; `0` deletes stale files on every deploy.
+
 ## 0.1.1 - 2026-11-10
 
 ### Changed

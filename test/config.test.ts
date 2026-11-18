@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, expect, test } from "vitest";
 
-import { readConfig } from "../src/config.ts";
+import { readConfig, writeConfig } from "../src/config.ts";
 
 const cwd = process.cwd();
 const valid = {
@@ -224,4 +224,28 @@ test.each([
 
   await expect(readConfig()).rejects.toThrow(/^Invalid orbitpush\.json/);
   await expect(readConfig()).rejects.toThrow(path);
+});
+
+test.each([0, 1, 30])("reads staleDays %i as given", async (staleDays) => {
+  await writeFile("orbitpush.json", JSON.stringify({ ...valid, staleDays }));
+
+  await expect(readConfig()).resolves.toMatchObject({ staleDays });
+});
+
+test.each([
+  ["a negative staleDays", -1],
+  ["a fractional staleDays", 1.5],
+  ["a string staleDays", "7"],
+])("rejects %s", async (_, staleDays) => {
+  await writeFile("orbitpush.json", JSON.stringify({ ...valid, staleDays }));
+
+  await expect(readConfig()).rejects.toThrow(/^Invalid orbitpush\.json/);
+});
+
+test("keeps staleDays when orbitpush.json is rewritten", async () => {
+  await writeFile("orbitpush.json", JSON.stringify({ ...valid, staleDays: 30 }));
+
+  await writeConfig(await readConfig(), { overwrite: true });
+
+  await expect(readConfig()).resolves.toMatchObject({ staleDays: 30 });
 });

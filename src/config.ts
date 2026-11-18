@@ -12,6 +12,8 @@ export const MISSING_CONFIG = `${CONFIG_FILE} not found. Run \`orbitpush init\` 
 export const STORAGE_REGIONS = ["DE", "UK", "SE", "NY", "LA", "SG", "SYD", "BR", "JH"] as const;
 export const GEO_ZONES = ["EU", "US", "ASIA", "SA", "AF"] as const;
 
+export const DEFAULT_STALE_DAYS = 7;
+
 export const TRAILING_SLASH = ["always", "never", "ignore"] as const;
 
 export const Region = z.enum(STORAGE_REGIONS);
@@ -52,6 +54,7 @@ const ConfigSchema = z.pipe(
       trailingSlash: z.optional(z.enum(TRAILING_SLASH)),
       redirects: z._default(z.array(Redirect), []),
       headers: z._default(z.array(Header), []),
+      staleDays: z.optional(z.int().check(z.nonnegative())),
       storageZoneId: z.optional(z.int()),
       pullZoneId: z.int(),
     })

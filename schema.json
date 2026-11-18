@@ -123,6 +123,12 @@
         }
       }
     },
+    "staleDays": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 7,
+      "description": "Days a stale file, one no longer in the build, stays in the storage zone so open pages and installed PWAs can still load it. deploy deletes it on the first run after it has been stale longer than this; 0 deletes stale files on every deploy."
+    },
     "storageZoneId": {
       "type": "integer",
       "deprecated": true,
