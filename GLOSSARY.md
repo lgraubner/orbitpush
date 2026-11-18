@@ -47,10 +47,13 @@ A pull zone with the edge rule `orbitpush disabled`, which blocks every request.
 _Avoid_: paused, suspended
 
 **Stale file**:
-A file in the storage zone that is no longer in the output directory. Deleted by the first deploy more than 7 days after it went stale, after the upload and the edge rule sync. Files under `.orbitpush/` are never stale.
+A file in the storage zone that is no longer in the output directory. A stale asset is deleted by the first deploy more than 7 days after it went stale; every other stale file by the deploy that finds it, unless the output has no `index.html`. Either way after the upload and the edge rule sync. Files under `.orbitpush/` are never stale.
+
+**Stale asset**:
+A stale file that an open page of the previous build can still request: `.js`, `.mjs`, `.css`, `.wasm`, `.json`, `.woff2`, `.woff`, `.ttf`, `.otf` or `.map`.
 
 **Stale record**:
-The file `.orbitpush/stale.json` in the storage zone, mapping each stale file to the time a deploy first found it stale. Deploy reads it with the storage listing and rewrites it after deleting the expired stale files.
+The file `.orbitpush/stale.json` in the storage zone, mapping each stale file deploy keeps to the time a deploy first found it stale. Deploy reads it with the storage listing and rewrites it after deleting the expired stale files.
 _Avoid_: manifest
 
 **Replication region**:

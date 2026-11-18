@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { openAsBlob } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { extname, join, relative, sep } from "node:path";
 
 import {
   api,
@@ -30,6 +30,7 @@ import { managedRules } from "@/rules.ts";
 
 const RULE_FILES = ["_headers", "_redirects"];
 const STALE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+const ASSET_EXTENSIONS = ["js", "mjs", "css", "wasm", "json", "woff2", "woff", "ttf", "otf", "map"];
 
 export async function deploy(
   apiKey: string,
@@ -43,7 +44,12 @@ export async function deploy(
   const files = await readOutput(config.outputDir, {
     migrated: config.redirects.length > 0 || config.headers.length > 0,
   });
-  if (!files.has("index.html")) log.warn(`No index.html in ${config.outputDir}`);
+  const hasIndex = files.has("index.html");
+  if (!hasIndex) {
+    log.warn(
+      `No index.html in ${config.outputDir}, so deploy deletes stale files only after 7 days.`,
+    );
+  }
 
   const { rules: allRules, spa, warnings } = managedRules(config, { aliasRedirects: true });
   for (const warning of warnings) log.warn(warning);
@@ -61,7 +67,7 @@ export async function deploy(
   const { expired, kept } = partitionStale(
     [...remote.keys()].filter((path) => !files.has(path) && !path.startsWith(ORBITPUSH_DIR)),
     record,
-    new Date(),
+    { now: new Date(), graced: hasIndex ? isAsset : () => true },
   );
 
   let uploaded = 0;
@@ -218,10 +224,19 @@ async function readOutput(dir: string, { migrated }: { migrated: boolean }) {
   return files;
 }
 
-function partitionStale(paths: string[], record: StaleRecord | undefined, now: Date) {
+function partitionStale(
+  paths: string[],
+  record: StaleRecord | undefined,
+  { now, graced }: { now: Date; graced: (path: string) => boolean },
+) {
   const expired: string[] = [];
   const kept = new Map<string, string>();
   for (const path of [...paths].sort()) {
+    if (!graced(path)) {
+      expired.push(path);
+      continue;
+    }
+
     const since =
       record && Object.hasOwn(record.stale, path) ? record.stale[path] : now.toISOString();
     if (now.getTime() - Date.parse(since) > STALE_GRACE_MS) expired.push(path);
@@ -229,6 +244,10 @@ function partitionStale(paths: string[], record: StaleRecord | undefined, now: D
   }
 
   return { expired, kept: Object.fromEntries(kept) };
+}
+
+function isAsset(path: string) {
+  return ASSET_EXTENSIONS.includes(extname(path).slice(1).toLowerCase());
 }
 
 function isHtml(path: string) {
