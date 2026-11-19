@@ -35,7 +35,7 @@ e2e/                      Playwright against real bunny.net; demo sites in e2e/s
 
 Import everything under `src/` with `@/` (`paths` in `tsconfig.json`, which esbuild and vitest read too), files in the same folder too; relative imports only outside `src/`. Only `cli.ts` imports from `src/commands/`; code that several commands share lives beside `cli.ts`. `eslint/no-restricted-imports` enforces both.
 
-- bunny.net HTTP: only through `api()`, `apiJson()` and `storage()` in `src/bunny.ts`. A response that is read goes through `apiJson()` with a schema from the same file.
+- bunny.net HTTP: only through `api()`, `apiJson()` and `storage()` in `src/bunny.ts`. A response that is read goes through `apiJson()` with a schema from the same file. Each request names its `action`, which a failure reads as `Could not <action>: bunny.net says "<Message>"`; a friendlier message for a known `ErrorKey` goes in `KNOWN_ERRORS`.
 - Steps that several commands run, such as `ensureDomains()`, pull zone reads and cache purges (`getPullZone()`, `purgeCache()`), and whether a hostname is on the pull zone and connected (`findHostname()`, `isConnected()`), live in `src/bunny.ts`.
 - The API key has one source: `envApiKey()` in `src/bunny.ts`. `apiKeyFromEnv()` throws the missing-key error, and `init` falls back to a prompt. The `EnableGeoZone*` request body has one builder: `geoZoneFlags()`.
 - Schemas: `z` from `src/zod.ts`, which loads the English error messages. Never import `zod/mini` directly.
@@ -58,6 +58,7 @@ Untrusted data is parsed once, where it enters, into a named domain type:
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BUNNY_API_KEY`                          | `envApiKey()` and `apiKeyFromEnv()` in `src/bunny.ts`                                                                                          |
 | `CI`                                     | `interactive` in `src/cli.ts`                                                                                                                  |
+| `ORBITPUSH_DEBUG`                        | `debugSuffix()` in `src/bunny.ts`                                                                                                              |
 | CLI flags                                | `parseArgs()` in `src/args.ts`, then the checks in `init()`                                                                                    |
 | Interactive prompts                      | the `validate` options in `src/commands/init.ts`                                                                                               |
 | `orbitpush.json`                         | `ConfigSchema` in `readConfig()` in `src/config.ts`, then `redirectRules()` and `headerRules()` in `src/rules.ts` for what bunny.net can serve |
@@ -89,7 +90,7 @@ Make the compiler reject impossible states.
 Fix the fault where it starts, and leave the design simpler than you found it.
 
 - The root cause is the first place the system did something it should not, or failed to handle a state it should; the symptom is only where that became visible. Ask whether the state that broke the code is legitimate. If it is, handle it where it broke. If it is not, find what produced it. Guards, retries, swallowed errors, clamped values, and fallback defaults are the usual ways to hide a bug. Swallowing every read error once let an unreadable `_redirects` delete every managed redirect; now only ENOENT counts as missing.
-- Instrument when stuck: read the actual error, the log, the stored state. A failed bunny.net call throws `<METHOD> <path> failed: <Message> (HTTP <status>)` from `errorText()` in `src/bunny.ts`; read that message before guessing. To see which requests a command sends, reuse `fakeBunny()` from its test file.
+- Instrument when stuck: read the actual error, the log, the stored state. A failed bunny.net call throws an `ApiError` from `apiError()` in `src/bunny.ts`, carrying `status` and `errorKey`; run the command with `ORBITPUSH_DEBUG=1` to append the method, path and HTTP status to the message, and read it before guessing. To see which requests a command sends, reuse `fakeBunny()` from its test file.
 - When two fixes fail the same check, they likely share a wrong assumption. Write that assumption down in one sentence and test it before a third fix.
 - After a fix, search for the same fault elsewhere and fix every instance.
 - When the deciding fact took a deep dig to find, propose the cheap always-on signal (a log field, a metric, a status) that would have shown it at first look.

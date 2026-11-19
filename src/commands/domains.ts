@@ -253,6 +253,7 @@ async function applyRules(
   // bunny.net shares one cache across hostnames unless this is set, so the noindex header of
   // b-cdn.net would be served on the domain from cache
   await api(apiKey, {
+    action: "apply the pull zone settings",
     method: "POST",
     path: `/pullzone/${config.pullZoneId}`,
     body: { EnableHostnameVary: true },

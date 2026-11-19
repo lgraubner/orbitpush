@@ -64,7 +64,24 @@ export const StaleRecord = z.object({
 });
 export type StaleRecord = z.infer<typeof StaleRecord>;
 
-const ErrorBody = z.object({ Message: z.string() });
+const ErrorBody = z.object({ Message: z.string(), ErrorKey: z.optional(z.string()) });
+
+const PullZoneList = z.object({
+  Items: z.array(
+    z.object({
+      Id: z.int(),
+      Name: z.string(),
+      Hostnames: z.array(z.object({ Value: z.string() })),
+    }),
+  ),
+  HasMoreItems: z.boolean(),
+});
+
+const HOSTNAME_TAKEN = "pullzone.hostname_already_registered";
+
+const KNOWN_ERRORS: Partial<Record<string, string>> = {
+  [HOSTNAME_TAKEN]: "the hostname is already on another pull zone",
+};
 
 const REQUEST_TIMEOUT_MS = 120_000;
 const MIN_UPLOAD_BYTES_PER_MS = 100;
@@ -86,9 +103,26 @@ export function geoZoneFlags(geoZones: GeoZone[]) {
   );
 }
 
-type ApiRequest = { method: "GET" | "POST" | "DELETE"; path: string; body?: unknown };
+type ApiRequest = {
+  action: string;
+  method: "GET" | "POST" | "DELETE";
+  path: string;
+  body?: unknown;
+};
 
-export async function api(apiKey: string, { method, path, body }: ApiRequest) {
+type Failure = { request: string; status?: number };
+
+function debugSuffix({ request, status }: Failure) {
+  if (process.env.ORBITPUSH_DEBUG !== "1") return "";
+
+  return ` (${request}${status === undefined ? "" : `, HTTP ${status}`})`;
+}
+
+function failure(action: string, reason: string, cause: Failure) {
+  return `Could not ${action}: ${reason}${debugSuffix(cause)}`;
+}
+
+export async function api(apiKey: string, { action, method, path, body }: ApiRequest) {
   const response = await fetch(`https://api.bunny.net${path}`, {
     method,
     headers: {
@@ -99,22 +133,46 @@ export async function api(apiKey: string, { method, path, body }: ApiRequest) {
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   }).catch((error: unknown) => {
-    throw new Error(`${method} ${path} failed: ${errorMessage(error)}`);
+    throw new Error(failure(action, errorMessage(error), { request: `${method} ${path}` }));
   });
-  if (!response.ok) {
-    throw new ApiError(`${method} ${path} failed: ${await errorText(response)}`, response.status);
-  }
+  if (!response.ok) throw await apiError(response, action, `${method} ${path}`);
 
   return response;
 }
 
-export class ApiError extends Error {
-  readonly status: number;
+type ApiErrorDetails = { request: string; status: number; errorKey?: string; detail: string };
 
-  constructor(message: string, status: number) {
+export class ApiError extends Error {
+  readonly request: string;
+  readonly status: number;
+  readonly errorKey: string | undefined;
+  readonly detail: string;
+
+  constructor(message: string, { request, status, errorKey, detail }: ApiErrorDetails) {
     super(message);
+    this.request = request;
     this.status = status;
+    this.errorKey = errorKey;
+    this.detail = detail;
   }
+}
+
+async function apiError(response: Response, action: string, request: string) {
+  const text = await response.text().catch(() => "");
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = undefined;
+  }
+
+  const body = ErrorBody.safeParse(json);
+  const detail = (body.success ? body.data.Message : text.slice(0, 200)) || "no details";
+  const errorKey = body.success ? body.data.ErrorKey : undefined;
+  const reason = (errorKey ? KNOWN_ERRORS[errorKey] : undefined) ?? `bunny.net says "${detail}"`;
+  const details = { request, status: response.status, errorKey, detail };
+
+  return new ApiError(failure(action, reason, details), details);
 }
 
 export async function apiJson<T>(
@@ -136,7 +194,12 @@ export function isConnected(pullZone: PullZone, host: string | undefined) {
 }
 
 export function getPullZone(apiKey: string, pullZoneId: number) {
-  return apiJson(apiKey, { schema: PullZone, method: "GET", path: `/pullzone/${pullZoneId}` });
+  return apiJson(apiKey, {
+    schema: PullZone,
+    action: `read the pull zone ${pullZoneId}`,
+    method: "GET",
+    path: `/pullzone/${pullZoneId}`,
+  });
 }
 
 export function storageZoneId(pullZone: PullZone) {
@@ -152,6 +215,7 @@ export function storageZoneId(pullZone: PullZone) {
 export function getStorageZone(apiKey: string, pullZone: PullZone) {
   return apiJson(apiKey, {
     schema: StorageZone,
+    action: "read the storage zone",
     method: "GET",
     path: `/storagezone/${storageZoneId(pullZone)}`,
   });
@@ -213,16 +277,64 @@ export async function ensureDomains(
 
 export async function addHostname(apiKey: string, pullZoneId: number, host: string) {
   log.step(`Adding hostname ${host}`);
-  await api(apiKey, {
-    method: "POST",
-    path: `/pullzone/${pullZoneId}/addHostname`,
-    body: { Hostname: host },
-  });
+  try {
+    await api(apiKey, {
+      action: `add the hostname ${host}`,
+      method: "POST",
+      path: `/pullzone/${pullZoneId}/addHostname`,
+      body: { Hostname: host },
+    });
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.errorKey !== HOSTNAME_TAKEN) throw error;
+
+    const zones = await apiJson(apiKey, {
+      schema: PullZoneList,
+      action: "list the pull zones",
+      method: "GET",
+      path: "/pullzone?page=1&perPage=1000",
+    }).catch(() => undefined);
+    if (!zones) throw error;
+
+    const exact = zones.Items.find((zone) =>
+      zone.Hostnames.some(({ Value }) => Value.toLowerCase() === host.toLowerCase()),
+    );
+    if (exact?.Id === pullZoneId) return;
+
+    const owner =
+      exact ??
+      zones.Items.find((zone) => zone.Hostnames.some(({ Value }) => coversHost(Value, host)));
+    throw new ApiError(hostnameTakenMessage(host, owner, zones.HasMoreItems, error), error);
+  }
+}
+
+type ListedZone = z.infer<typeof PullZoneList>["Items"][number];
+
+function coversHost(wildcard: string, host: string) {
+  const [first, ...domain] = wildcard.toLowerCase().split(".");
+  const [label, ...hostDomain] = host.toLowerCase().split(".");
+
+  return first === "*" && Boolean(label) && domain.join(".") === hostDomain.join(".");
+}
+
+function hostnameTakenMessage(
+  host: string,
+  owner: ListedZone | undefined,
+  incomplete: boolean,
+  error: ApiError,
+) {
+  if (!owner && incomplete) return error.message;
+
+  const message = owner
+    ? `${host} is already on the pull zone ${owner.Name} in your bunny.net account. Run \`orbitpush domains remove ${host}\` in that project, or remove it in the dashboard: ${dashboardUrl(owner.Id)}/general/hostnames — then try again.`
+    : `${host} is already used by another bunny.net account. Remove it there, or contact bunny.net support if you don't have access to that account.`;
+
+  return message + debugSuffix(error);
 }
 
 export async function removeHostname(apiKey: string, pullZoneId: number, host: string) {
   log.step(`Removing hostname ${host}`);
   await api(apiKey, {
+    action: `remove the hostname ${host}`,
     method: "DELETE",
     path: `/pullzone/${pullZoneId}/removeHostname`,
     body: { Hostname: host },
@@ -241,20 +353,22 @@ export async function connectHostname(
   hostname?: PullZone["Hostnames"][number],
 ): Promise<Connection> {
   if (!hostname?.HasCertificate) {
-    const failure = await api(apiKey, {
+    const reason = await api(apiKey, {
+      action: `get an SSL certificate for ${host}`,
       method: "GET",
       path: `/pullzone/loadFreeCertificate?hostname=${encodeURIComponent(host)}`,
     }).then(
       () => undefined,
-      (error: unknown) => errorMessage(error),
+      (error: unknown) => (error instanceof ApiError ? error.detail : errorMessage(error)),
     );
     // bunny.net answers HTTP 400 for every failed issue, so only its message tells DNS apart
-    if (failure && /not pointing to our servers/i.test(failure)) return { status: "dns" };
-    if (failure) return { status: "failed", reason: failure };
+    if (reason && /not pointing to our servers/i.test(reason)) return { status: "dns" };
+    if (reason) return { status: "failed", reason };
   }
 
   if (!hostname?.ForceSSL) {
     await api(apiKey, {
+      action: `turn on HTTPS for ${host}`,
       method: "POST",
       path: `/pullzone/${pullZoneId}/setForceSSL`,
       body: { Hostname: host, ForceSSL: true },
@@ -274,7 +388,11 @@ export function logDnsRecord(host: string, cdnHost: string, message: string) {
 
 export async function purgeCache(apiKey: string, pullZoneId: number) {
   log.status("Purging cache");
-  await api(apiKey, { method: "POST", path: `/pullzone/${pullZoneId}/purgeCache` });
+  await api(apiKey, {
+    action: "purge the cache",
+    method: "POST",
+    path: `/pullzone/${pullZoneId}/purgeCache`,
+  });
 }
 
 const STORAGE_AUTH_ATTEMPTS = 7;
@@ -284,6 +402,7 @@ export function storage(zone: StorageZone) {
   const base = `https://${zone.StorageHostname}/${encodeURIComponent(zone.Name)}/`;
   const url = (path: string) => base + path.split("/").map(encodeURIComponent).join("/");
   const request = async (
+    action: string,
     method: string,
     path: string,
     {
@@ -302,7 +421,7 @@ export function storage(zone: StorageZone) {
         method,
         headers: { AccessKey: zone.Password, ...init.headers },
       }).catch((error: unknown) => {
-        throw new Error(`${method} /${path} failed: ${errorMessage(error)}`);
+        throw new Error(failure(action, errorMessage(error), { request: `${method} /${path}` }));
       });
       // bunny.net rejects a new storage zone's password for a few seconds after it is created
       if (response.status === 401 && attempt < STORAGE_AUTH_ATTEMPTS) {
@@ -311,7 +430,7 @@ export function storage(zone: StorageZone) {
       }
 
       if (!response.ok && !(allowMissing && response.status === 404)) {
-        throw new Error(`${method} /${path} failed: ${await errorText(response)}`);
+        throw await apiError(response, action, `${method} /${path}`);
       }
 
       return response;
@@ -322,7 +441,7 @@ export function storage(zone: StorageZone) {
 
   return {
     put: ({ path, data, checksum }: { path: string; data: Blob; checksum: string }) =>
-      request("PUT", path, {
+      request(`upload /${path}`, "PUT", path, {
         body: data,
         headers: { Checksum: checksum.toUpperCase() },
         signal: AbortSignal.timeout(
@@ -330,7 +449,7 @@ export function storage(zone: StorageZone) {
         ),
       }),
     async read<T>(path: string, schema: z.ZodMiniType<T>) {
-      const response = await request("GET", path, {
+      const response = await request(`read /${path}`, "GET", path, {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         allowMissing: true,
       });
@@ -342,7 +461,9 @@ export function storage(zone: StorageZone) {
       return parseJson(response, schema, path);
     },
     delete: (path: string) =>
-      request("DELETE", path, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }),
+      request(`delete /${path}`, "DELETE", path, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      }),
     async list() {
       const files = new Map<string, string>();
       let dirs = [""];
@@ -350,7 +471,7 @@ export function storage(zone: StorageZone) {
       while (dirs.length) {
         const subdirs: string[] = [];
         await pool(dirs, 8, async (dir) => {
-          const response = await request("GET", dir, {
+          const response = await request(`list the files in /${dir}`, "GET", dir, {
             signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           });
           const entries = await parseJson(response, Listing, dir);
@@ -378,21 +499,6 @@ function parseResponse<T>(schema: z.ZodMiniType<T>, json: unknown, request: stri
   }
 
   return result.data;
-}
-
-async function errorText(response: Response) {
-  const text = await response.text().catch(() => "");
-  let json: unknown;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = undefined;
-  }
-
-  const body = ErrorBody.safeParse(json);
-  if (body.success) return `${body.data.Message} (HTTP ${response.status})`;
-
-  return `${text.slice(0, 200) || "no details"} (HTTP ${response.status})`;
 }
 
 export async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<unknown>) {
@@ -454,6 +560,7 @@ export async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeR
   const remove = async (rules: typeof removed) => {
     for (const rule of rules) {
       await api(apiKey, {
+        action: "delete an edge rule",
         method: "DELETE",
         path: `/pullzone/${pullZoneId}/edgerules/${rule.Guid}`,
       });
@@ -466,6 +573,7 @@ export async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeR
 
   for (const rule of writes) {
     await api(apiKey, {
+      action: "write an edge rule",
       method: "POST",
       path: `/pullzone/${pullZoneId}/edgerules/addOrUpdate`,
       body: rule,

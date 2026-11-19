@@ -32,10 +32,10 @@ export async function destroy(
   if (pullZone) {
     const zoneId = storageZoneId(pullZone);
     log.step(`Deleting storage zone ${config.name} (${zoneId}) and every file in it`);
-    await deleteIfExists(apiKey, `/storagezone/${zoneId}`);
+    await deleteIfExists(apiKey, `/storagezone/${zoneId}`, `the storage zone ${config.name}`);
 
     log.step(`Deleting pull zone ${config.name} (${config.pullZoneId})`);
-    await deleteIfExists(apiKey, `/pullzone/${config.pullZoneId}`);
+    await deleteIfExists(apiKey, `/pullzone/${config.pullZoneId}`, `the pull zone ${config.name}`);
 
     await rm(CONFIG_FILE, { force: true });
     log.success(`Deleted ${config.name} from bunny.net and removed ${CONFIG_FILE}`);
@@ -49,9 +49,9 @@ export async function destroy(
   log.success(`Removed ${CONFIG_FILE}`);
 }
 
-async function deleteIfExists(apiKey: string, path: string) {
+async function deleteIfExists(apiKey: string, path: string, zone: string) {
   try {
-    await api(apiKey, { method: "DELETE", path });
+    await api(apiKey, { action: `delete ${zone}`, method: "DELETE", path });
   } catch (error) {
     if (!isNotFound(error)) throw error;
   }
