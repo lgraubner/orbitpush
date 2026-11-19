@@ -74,6 +74,9 @@ case "$cmd" in
       "FAKE_BUNNY_STATE='$WORK/doctor-state.json' node --import '$FAKE' -e \
         'fetch(\"https://example.com\").then(() => process.exit(1), (e) => process.exit(/blocked/.test(e.message) ? 0 : 1))'"
     if tmux has-session -t "=$SESSION" 2>/dev/null; then echo "info tmux session $SESSION is running"; fi
+    check "fake answers DNS offline" \
+      "FAKE_BUNNY_STATE='$WORK/doctor-state.json' FAKE_DNS='a.test=b.b-cdn.net' node --import '$FAKE' -e \
+        'const { Resolver } = require(\"node:dns/promises\"); new Resolver().resolveCname(\"a.test\").then((r) => process.exit(r[0] === \"b.b-cdn.net\" ? 0 : 1), () => process.exit(1))'"
     rm -f "$WORK/doctor-state.json"
     [[ $ok == 1 ]] || exit 1
     ;;

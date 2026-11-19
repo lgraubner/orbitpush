@@ -16,15 +16,14 @@ npx orbitpush domains add www.example.com    # optional: your own domain
 Sets up a site without deploying it. In a terminal you rarely need it: the first `deploy` asks the same questions. It asks for the project name, build output directory, the main storage region, replication regions and CDN delivery regions. Then it creates:
 
 1. a storage zone (name = project name),
-2. a pull zone with the storage zone as its origin (available at `https://<name>.b-cdn.net`),
-3. with `--domain` and `--alias`, those hostnames on the pull zone, and prints the DNS record for each.
+2. a pull zone with the storage zone as its origin (available at `https://<name>.b-cdn.net`).
 
-Domains are not asked for: add them with [`orbitpush domains add`](#orbitpush-domains), which waits for DNS and turns on HTTPS. For a domain given to `init`, run `domains add` for it once its DNS record is set.
+`init` sets up no domains: add them afterwards with [`orbitpush domains add`](#orbitpush-domains), which checks the DNS record and turns on HTTPS.
 
 Each prompt can be skipped with a flag; an option no command knows stops with an error. Without a terminal, `init` needs `--name` and `--dir`, or `--yes` to take the defaults:
 
 ```bash
-npx orbitpush init --name my-site --dir dist --domain www.example.com --alias example.com --region DE --delivery-region EU --delivery-region US --yes
+npx orbitpush init --name my-site --dir dist --region DE --delivery-region EU --delivery-region US --yes
 ```
 
 The pull zone and storage zone names are global across bunny.net. If the name is taken, choose another one.
@@ -37,7 +36,7 @@ In a terminal, `deploy` without an `orbitpush.json` asks whether to set up a new
 
 1. Reads `orbitpush.json` and `BUNNY_API_KEY`.
 2. Compares the output directory with the storage zone using SHA256 checksums and uploads only changed files, HTML files last. A symlinked file is uploaded with the content it points to; a symlinked directory or a broken symlink is skipped with a warning.
-3. Applies the settings: [SPA mode](#spa-mode) or the [404 page](#404-page) from the output directory, and replication regions, delivery regions and domains from `orbitpush.json`.
+3. Applies the settings: [SPA mode](#spa-mode) or the [404 page](#404-page) from the output directory, and replication regions, delivery regions and domains from `orbitpush.json`. A domain gets its hostname on the pull zone and an SSL certificate once bunny.net issues one. `deploy` looks up no DNS: when bunny.net refuses a certificate, a warning after the deploy names the domain and says to run `orbitpush domains add <host>`, which shows the record it needs.
 4. Turns `redirects` and `headers` into edge rules (see below).
 5. Deletes files from the storage zone that are no longer in the build. HTML pages, PDFs, images and every other file go on the deploy that drops them. Scripts, styles, data, fonts and source maps (`.js`, `.mjs`, `.css`, `.wasm`, `.json`, `.woff2`, `.woff`, `.ttf`, `.otf`, `.map`) stay for 7 days, so an installed PWA or an open page still running the previous version can load its lazy chunks. Without an `index.html` in the output, which usually means the wrong directory, `deploy` warns and deletes stale files only after 7 days. The date each file left the build is kept in `/.orbitpush/stale.json` in the storage zone, which the pull zone serves publicly like every other file there. It lists only paths the site served before. If you delete it, the next deploy treats every stale file as stale since then. `.orbitpush/` in the storage zone belongs to orbitpush, so `deploy` skips files under `.orbitpush/` in the output directory with a warning.
 6. Purges the pull zone cache.
@@ -66,13 +65,27 @@ npx orbitpush domains remove example.com
 npx orbitpush domains list
 ```
 
-`domains add` adds the hostname to the pull zone, prints the DNS record to create, and waits until the record points to bunny.net: it checks again 10 seconds after each check, for up to 15 minutes. Then it gets a free SSL certificate, turns on HTTPS and writes the alias redirects. If DNS takes longer, or you stop it with Ctrl+C, run the same command again later: it continues where it stopped. Without a terminal it checks once and exits with status `1` while the domain is not connected.
+`domains add` adds the hostname to the pull zone and looks up its DNS record itself, through the public resolvers `1.1.1.1` and `8.8.8.8`. It prints the record the hostname needs next to the one it has:
+
+```
+✔ The DNS record of www.example.com points to my-site.b-cdn.net
+    expected  CNAME my-site.b-cdn.net
+    current   CNAME my-site.b-cdn.net   ✔
+```
+
+The record matches when its CNAME, or any CNAME it leads to, is `<name>.b-cdn.net`. A CNAME that leads to another pull zone (another `*.b-cdn.net` name) blocks `domains add`, even though bunny.net would serve the site through it today. After you change such a record, the public resolvers can keep showing the old one until its TTL runs out; run `domains add` again then. In every other case bunny.net's certificate check decides:
+
+- A root domain with ALIAS, ANAME or CNAME flattening, or a CNAME to such a domain, has no CNAME to `<name>.b-cdn.net` to read. Its addresses are compared with those of `<name>.b-cdn.net`, but bunny.net answers with different addresses in different places, so a difference is shown without blocking.
+- A record the public resolvers do not show yet, for example because they still remember that it was missing, does not block when bunny.net already sees it.
+- If the lookup itself fails, `domains add` says so.
+
+Until the hostname connects, `domains add` waits: it checks again 10 seconds after each check, for up to 15 minutes, and prints the current record each time it changes. Then it gets a free SSL certificate, turns on HTTPS and writes the alias redirects. If DNS takes longer, or you stop it with Ctrl+C, run the same command again later: it continues where it stopped. Without a terminal it checks once and exits with status `1` while the domain is not connected or its CNAME leads to another pull zone. That includes a domain that is connected but whose CNAME leads to another pull zone.
 
 With `--primary`, the domain becomes the primary domain only once it is connected, and the former primary domain becomes an alias that redirects to it. Until then it stays an alias, so visitors are never sent to a domain without HTTPS.
 
 `domains remove` removes the hostname from `orbitpush.json` and the pull zone. A primary domain that still has aliases cannot be removed: remove the aliases first, or make another domain primary with `orbitpush domains add <host> --primary`.
 
-`domains list` changes nothing. It shows each domain, whether it is connected, and the DNS record it still needs.
+`domains list` changes nothing and looks up no DNS. It shows each domain as bunny.net sees it: whether it is connected, and the DNS record a domain without a certificate still needs. To check the record of a domain, run `domains add` for it again.
 
 ## Without a terminal (CI, scripts, agents)
 
@@ -89,7 +102,7 @@ npx orbitpush domains add www.example.com   # prints the DNS record, exits 1 unt
 - Commit `orbitpush.json` after `init`. Without a terminal, `deploy` never creates a site; it stops when the file is missing.
 - `init` stops unless it gets `--name` and `--dir`, or `--yes`, so a guessed name never creates zones.
 - `deploy`, `disable` and `enable` take no input. `destroy` needs `--yes`.
-- `domains add` checks DNS once instead of waiting and exits `1` while the domain is not connected; run it again a few minutes later. `domains list` exits `1` while any domain is not connected, so a script can poll it.
+- `domains add` checks DNS once instead of waiting and exits `1` while the domain is not connected or its CNAME leads to another pull zone; run it again a few minutes later. `domains list` exits `1` while any domain is not connected, so a script can poll it.
 - Errors go to stderr with exit code `1`, an unknown command exits with `2`, and an unknown option stops with `1`, so a typo never falls back to a default.
 - A failed bunny.net request reads `Could not <action>: bunny.net says "<message>"`. Set `ORBITPUSH_DEBUG=1` to also print the request's method, path and HTTP status.
 - Some coding agents run commands in a pseudo-terminal, where orbitpush would ask its questions and wait. Set `CI=1` for them: then nothing asks, and `domains add` checks once instead of waiting up to 15 minutes.

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { Resolver } from "node:dns/promises";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const REGION_HOSTS = {
@@ -46,6 +47,34 @@ if (process.argv[2] === "summary") {
 } else {
   installClock();
   installFetch();
+  installDns();
+}
+
+function installDns() {
+  const records = new Map(
+    (process.env.FAKE_DNS ?? "")
+      .split(",")
+      .filter(Boolean)
+      .map((entry) => entry.split("=").map((part) => part.trim().toLowerCase())),
+  );
+  const fail = (code) => Promise.reject(Object.assign(new Error(`fake dns: ${code}`), { code }));
+  const lookup = (type) =>
+    async function (name) {
+      if (process.env.FAKE_DNS_FAIL) return fail(process.env.FAKE_DNS_FAIL);
+
+      const host = name.toLowerCase();
+      if (type === "A" && host.endsWith(".b-cdn.net")) return ["192.0.2.1"];
+
+      const record = records.get(host);
+      if (type === "CNAME" && record && !record.startsWith("a:")) return [record];
+      if (type === "A" && record?.startsWith("a:")) return record.slice(2).split("+");
+
+      return fail("ENODATA");
+    };
+
+  Resolver.prototype.resolveCname = lookup("CNAME");
+  Resolver.prototype.resolve4 = lookup("A");
+  Resolver.prototype.resolve6 = lookup("AAAA");
 }
 
 function installClock() {

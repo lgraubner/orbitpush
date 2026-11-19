@@ -3,37 +3,26 @@ import { expect, test } from "vitest";
 import { parseArgs } from "../src/args.ts";
 
 test("parses a command with its flags", () => {
-  expect(
-    parseArgs([
-      "init",
-      "--name",
-      "site",
-      "--domain",
-      "www.a.test",
-      "--alias",
-      "a.test",
-      "--alias",
-      "b.test",
-      "-y",
-    ]),
-  ).toMatchObject({
+  expect(parseArgs(["init", "--name", "site", "--dir", "dist", "-y"])).toMatchObject({
     command: "init",
     flags: {
       name: "site",
-      domain: "www.a.test",
-      alias: ["a.test", "b.test"],
+      dir: "dist",
       yes: true,
     },
   });
 });
 
-test.each(["region", "domain"])("rejects --%s when it is given twice", (flag) => {
+test.each(["region", "name"])("rejects --%s when it is given twice", (flag) => {
   expect(() => parseArgs(["init", `--${flag}`, "a", `--${flag}`, "b"])).toThrow(flag);
 });
 
-test.each([["--domian"], ["-x"]])("rejects %s, which no command knows", (flag) => {
-  expect(() => parseArgs(["init", flag, "www.a.test", "-y"])).toThrow(` ${flag}.`);
-});
+test.each([["--domian"], ["-x"], ["--domain"], ["--alias"]])(
+  "rejects %s, which no command knows",
+  (flag) => {
+    expect(() => parseArgs(["init", flag, "www.a.test", "-y"])).toThrow(` ${flag}.`);
+  },
+);
 
 test("parses --prune-hostnames for deploy", () => {
   expect(parseArgs(["deploy", "--prune-hostnames"])).toMatchObject({

@@ -95,9 +95,15 @@ function site(
         await writeFile(join(dir, "netlify.toml"), fill(await readFile(toml, "utf8")));
       }
 
-      const domainFlags = customDomain ? ["--domain", customDomain, "--alias", alias ?? ""] : [];
-      const result = await cli("init", "--name", name, "--dir", "public", ...domainFlags, "--yes");
+      const result = await cli("init", "--name", name, "--dir", "public", "--yes");
       if (result.code !== 0) return result;
+
+      const file = join(dir, "orbitpush.json");
+      const patch = async (fields: object) => {
+        const config: object = JSON.parse(await readFile(file, "utf8"));
+        await writeFile(file, JSON.stringify({ ...config, ...fields }));
+      };
+      if (customDomain) await patch({ domain: customDomain, aliases: alias ? [alias] : [] });
 
       // A site with Netlify files is set up the way a Netlify user would: init, then migrate
       if (existsSync(toml)) return cli("migrate-netlify");
@@ -105,12 +111,7 @@ function site(
       const extra = join(SITES, `${demo}.orbitpush.json`);
       if (!existsSync(extra)) return result;
 
-      const file = join(dir, "orbitpush.json");
-      const config: object = JSON.parse(await readFile(file, "utf8"));
-      await writeFile(
-        file,
-        JSON.stringify({ ...config, ...JSON.parse(fill(await readFile(extra, "utf8"))) }),
-      );
+      await patch(JSON.parse(fill(await readFile(extra, "utf8"))));
       return result;
     },
 

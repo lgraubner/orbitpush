@@ -24,9 +24,9 @@ const help = `Deploy static sites to your own bunny.net account.
 Usage:
   orbitpush init                   Create a storage zone + pull zone and write orbitpush.json
   orbitpush deploy                 Upload the build output, sync edge rules and purge the cache
-  orbitpush domains add <host>     Add a domain and connect it: waits for its DNS record,
-                                   then turns on HTTPS. The first one becomes the primary
-                                   domain, later ones redirect to it
+  orbitpush domains add <host>     Add a domain and connect it: waits until its DNS record
+                                   points to the pull zone, then turns on HTTPS. The first
+                                   one becomes the primary domain, later ones redirect to it
   orbitpush domains add <host> --primary
                                    Make a domain the primary domain once it is connected;
                                    the former primary domain then redirects to it
@@ -41,8 +41,6 @@ Usage:
 Init options (skip the matching prompt):
   --name <name>                 Storage zone and pull zone name
   --dir <path>                  Build output directory
-  --domain <host>               Primary domain
-  --alias <host>                Hostname that redirects to the domain, repeatable
   --region <code>               Main storage region (DE, UK, SE, NY, LA, SG, SYD, BR, JH)
   --replication-region <code>   Extra storage region, repeatable (default: none)
   --delivery-region <zone>      CDN delivery region (EU, US, ASIA, SA, AF), repeatable (default: EU, US)
@@ -79,10 +77,11 @@ try {
       ? await setUpForDeploy()
       : { apiKey: apiKeyFromEnv(), config: await readConfig() };
     const started = Date.now();
-    const url = await deploy(site.apiKey, site.config, {
+    const { url, domainWarnings } = await deploy(site.apiKey, site.config, {
       pruneHostnames: args.flags["prune-hostnames"],
     });
     log.success(`Deployed to ${url} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    for (const warning of domainWarnings) log.warn(warning);
     if (setUp) log.detail("Use your own domain: `npx orbitpush domains add www.example.com`");
   } else if (args.command === "domains") {
     const connected = await domains(apiKeyFromEnv(), await readConfig(), args.rest, {
