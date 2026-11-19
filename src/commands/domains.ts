@@ -204,9 +204,10 @@ async function waitForConnection(
 ) {
   const check = async () => {
     const record = await lookUpDnsRecord(host, cdnHost);
-    const connection: Connection = pointsToOtherHost(record)
-      ? { status: "dns" }
-      : await connectHostname(apiKey, pullZoneId, host, hostname);
+    const connection: Connection =
+      record.state === "other-pull-zone"
+        ? { status: "dns" }
+        : await connectHostname(apiKey, pullZoneId, host, hostname);
 
     return { record, connection };
   };
@@ -246,10 +247,6 @@ async function waitForConnection(
   return { connection, record, checks };
 }
 
-function pointsToOtherHost(record: DnsRecord) {
-  return record.state === "elsewhere" && record.current.type === "CNAME";
-}
-
 function logDnsCheck(host: string, cdnHost: string, record: DnsRecord) {
   if (record.state === "matches") {
     log.success(`The DNS record of ${host} points to ${cdnHost}`);
@@ -273,11 +270,11 @@ function logRecordLines(cdnHost: string, record: DnsRecord) {
 function currentLine(record: DnsRecord, cdnHost: string) {
   switch (record.state) {
     case "matches":
-      return `current   ${dnsValue(record.current)}   ✔${record.current.type === "A" ? ` (same address as ${cdnHost})` : ""}`;
+      return `current   ${dnsValue(record.current)}   ✔${record.by === "address" ? ` (same address as ${cdnHost})` : ""}`;
+    case "other-pull-zone":
+      return `current   ${dnsValue(record.current)}   change this`;
     case "elsewhere":
-      return record.current.type === "CNAME"
-        ? `current   ${dnsValue(record.current)}   change this`
-        : `current   ${dnsValue(record.current)}   not an address of ${cdnHost}`;
+      return `current   ${dnsValue(record.current)}   differs from ${cdnHost}`;
     case "missing":
       return "current   none   add this record";
     case "unknown":
@@ -285,14 +282,23 @@ function currentLine(record: DnsRecord, cdnHost: string) {
   }
 }
 
-function dnsValue(value: DnsValue) {
-  return value.type === "CNAME"
-    ? `CNAME ${value.chain.join(" → ")}`
-    : `A ${value.addresses.join(", ")}`;
+function dnsValue({ chain, addresses }: DnsValue) {
+  const v4 = addresses.filter((address) => !address.includes(":"));
+  const v6 = addresses.filter((address) => address.includes(":"));
+  const parts = [
+    chain.length ? `CNAME ${chain.join(" → ")}` : "",
+    [v4.length ? `A ${v4.join(", ")}` : "", v6.length ? `AAAA ${v6.join(", ")}` : ""]
+      .filter(Boolean)
+      .join(", "),
+  ];
+
+  return parts.filter(Boolean).join(" → ");
 }
 
 function dnsProblem(record: DnsRecord, cdnHost: string) {
   switch (record.state) {
+    case "other-pull-zone":
+      return `its DNS record leads to another pull zone (${dnsValue(record.current)}), not to ${cdnHost}`;
     case "elsewhere":
       return `its DNS record points to ${dnsValue(record.current)}, not to ${cdnHost}`;
     case "missing":

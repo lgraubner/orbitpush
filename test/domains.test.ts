@@ -1113,7 +1113,7 @@ test("add of a root domain with addresses elsewhere shows them and the flattenin
   expect(certificateChecks).toHaveLength(1);
   expect(writes).not.toContain(FORCE_SSL);
   expect(output()).toContain("! Set this DNS record for example.com at your DNS provider:");
-  expect(output()).toContain("current   A 203.0.113.5   not an address of site.b-cdn.net");
+  expect(output()).toContain("current   A 203.0.113.5   differs from site.b-cdn.net");
   expect(output()).toMatch(/ALIAS|ANAME|CNAME flattening/);
 });
 
@@ -1127,7 +1127,7 @@ test("add connects a root domain whose flattened addresses differ from ours when
 
   await domains("key", config, ["add", "example.com"], options);
 
-  expect(output()).toContain("current   A 203.0.113.5   not an address of site.b-cdn.net");
+  expect(output()).toContain("current   A 203.0.113.5   differs from site.b-cdn.net");
   expect(writes).toContain(FORCE_SSL);
   expect(output()).toContain("✔ example.com is connected: https://example.com");
 });

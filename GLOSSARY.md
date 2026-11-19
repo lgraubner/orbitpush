@@ -43,7 +43,7 @@ Said of a hostname on the pull zone that has an SSL certificate, so it serves th
 _Avoid_: active, verified
 
 **DNS record**:
-The record a hostname needs at its DNS provider: a CNAME to `<name>.b-cdn.net`, or ALIAS, ANAME or CNAME flattening at the root of a domain. `domains add` looks it up itself and reports one of three states: it **matches** when the hostname's CNAME chain reaches `<name>.b-cdn.net` (or, without a CNAME, its addresses are those of `<name>.b-cdn.net`), it **points elsewhere**, such as to another pull zone, or it is **missing**. A record can point elsewhere while the hostname is connected, because bunny.net issues the certificate for any record that reaches bunny.net. Only a CNAME that points elsewhere blocks `domains add`; addresses that differ do not, since bunny.net answers with different addresses in different places.
+The record a hostname needs at its DNS provider: a CNAME to `<name>.b-cdn.net`, or ALIAS, ANAME or CNAME flattening at the root of a domain. `domains add` looks it up itself and reports one of four states: it **matches** when the hostname's CNAME chain reaches `<name>.b-cdn.net` (or, without a CNAME, its addresses are those of `<name>.b-cdn.net`), it **points to another pull zone** (its CNAME chain reaches another `*.b-cdn.net` name), it **points elsewhere**, or it is **missing**. A record can point to another pull zone while the hostname is connected, because bunny.net issues the certificate for any record that reaches bunny.net. Only a record that points to another pull zone blocks `domains add`; addresses that differ do not, since bunny.net answers with different addresses in different places.
 _Avoid_: DNS target, DNS entry
 
 **Disabled site**:

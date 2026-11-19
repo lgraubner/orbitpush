@@ -51,7 +51,8 @@ test("a CNAME to this pull zone matches and lists the chain without the host", a
 
   expect(await lookUpDnsRecord("www.example.com", CDN)).toEqual({
     state: "matches",
-    current: { type: "CNAME", chain: ["site.b-cdn.net"] },
+    by: "cname",
+    current: { chain: ["site.b-cdn.net"], addresses: [] },
   });
 });
 
@@ -69,7 +70,8 @@ test("a CNAME matches case-insensitively and with a trailing dot, and the chain 
 
   expect(await lookUpDnsRecord("www.example.com", "SITE.b-cdn.net.")).toEqual({
     state: "matches",
-    current: { type: "CNAME", chain: ["site.b-cdn.net"] },
+    by: "cname",
+    current: { chain: ["site.b-cdn.net"], addresses: [] },
   });
 });
 
@@ -82,11 +84,12 @@ test("a CNAME chain that reaches this pull zone in a later hop matches", async (
 
   expect(await lookUpDnsRecord("www.example.com", CDN)).toEqual({
     state: "matches",
-    current: { type: "CNAME", chain: ["proxy.example.net", "site.b-cdn.net"] },
+    by: "cname",
+    current: { chain: ["proxy.example.net", "site.b-cdn.net"], addresses: [] },
   });
 });
 
-test("a CNAME to another pull zone is elsewhere even though it shares this pull zone's addresses", async () => {
+test("a CNAME to another pull zone is that pull zone even though it shares this pull zone's addresses", async () => {
   fakeDns({
     "www.example.com": { cname: ["other-site.b-cdn.net"] },
     "other-site.b-cdn.net": CDN_ZONE,
@@ -94,8 +97,8 @@ test("a CNAME to another pull zone is elsewhere even though it shares this pull 
   });
 
   expect(await lookUpDnsRecord("www.example.com", CDN)).toEqual({
-    state: "elsewhere",
-    current: { type: "CNAME", chain: ["other-site.b-cdn.net"] },
+    state: "other-pull-zone",
+    current: { chain: ["other-site.b-cdn.net"], addresses: [] },
   });
 });
 
@@ -130,9 +133,8 @@ test("a CNAME chain reaching this pull zone at the 8th hop matches", async () =>
 
   const record = await lookUpDnsRecord("www.example.com", CDN);
 
-  expect(record.state).toBe("matches");
-  expect(record).toMatchObject({ current: { type: "CNAME" } });
-  if (record.state === "matches" && record.current.type === "CNAME") {
+  expect(record).toMatchObject({ state: "matches", by: "cname" });
+  if (record.state === "matches") {
     expect(record.current.chain).toHaveLength(8);
     expect(record.current.chain.at(-1)).toBe(CDN);
   }
@@ -157,7 +159,8 @@ test.each(["ENODATA", "ENOTFOUND"])(
 
     expect(await lookUpDnsRecord("example.com", CDN)).toEqual({
       state: "matches",
-      current: { type: "A", addresses: ["192.0.2.2"] },
+      by: "address",
+      current: { chain: [], addresses: ["192.0.2.2"] },
     });
   },
 );
@@ -167,9 +170,8 @@ test("without a CNAME, an AAAA address shared with this pull zone matches", asyn
 
   const record = await lookUpDnsRecord("example.com", CDN);
 
-  expect(record.state).toBe("matches");
-  expect(record).toMatchObject({ current: { type: "A" } });
-  if (record.state === "matches" && record.current.type === "A") {
+  expect(record).toMatchObject({ state: "matches", by: "address" });
+  if (record.state === "matches") {
     expect([...record.current.addresses].sort()).toEqual(["2001:db8::1", "203.0.113.5"]);
   }
 });
@@ -179,7 +181,7 @@ test("without a CNAME, addresses that this pull zone does not have are elsewhere
 
   expect(await lookUpDnsRecord("example.com", CDN)).toEqual({
     state: "elsewhere",
-    current: { type: "A", addresses: ["203.0.113.5"] },
+    current: { chain: [], addresses: ["203.0.113.5"] },
   });
 });
 
@@ -204,8 +206,8 @@ test.each([
   ],
   ["the host's A record", { "example.com": { error: { a: "ESERVFAIL" } } }, "ESERVFAIL"],
   [
-    "the host's AAAA record",
-    { "example.com": { a: ["192.0.2.1"], error: { aaaa: "ETIMEOUT" } } },
+    "the host's AAAA record without an A record",
+    { "example.com": { error: { aaaa: "ETIMEOUT" } } },
     "ETIMEOUT",
   ],
   [
@@ -222,6 +224,37 @@ test.each([
     expect(await lookUpDnsRecord(host, CDN)).toEqual({ state: "unknown", reason: code });
   },
 );
+
+test("a failed AAAA lookup still compares the A addresses", async () => {
+  fakeDns({ "example.com": { a: ["192.0.2.1"], error: { aaaa: "ESERVFAIL" } }, [CDN]: CDN_ZONE });
+
+  expect(await lookUpDnsRecord("example.com", CDN)).toMatchObject({
+    state: "matches",
+    by: "address",
+  });
+});
+
+test("a CNAME to the user's own root domain compares that domain's flattened addresses", async () => {
+  fakeDns({
+    "www.example.com": { cname: ["example.com"] },
+    "example.com": { a: ["192.0.2.2"] },
+    [CDN]: CDN_ZONE,
+  });
+
+  expect(await lookUpDnsRecord("www.example.com", CDN)).toEqual({
+    state: "matches",
+    by: "address",
+    current: { chain: ["example.com"], addresses: ["192.0.2.2"] },
+  });
+});
+
+test("addresses are sorted, so a rotating answer reads the same on every check", async () => {
+  fakeDns({ "example.com": { a: ["203.0.113.9", "203.0.113.1"] }, [CDN]: CDN_ZONE });
+
+  expect(await lookUpDnsRecord("example.com", CDN)).toMatchObject({
+    current: { addresses: ["203.0.113.1", "203.0.113.9"] },
+  });
+});
 
 test("the lookup asks the public resolvers 1.1.1.1 and 8.8.8.8", async () => {
   const { servers } = fakeDns({ "www.example.com": { cname: [CDN] }, [CDN]: CDN_ZONE });
