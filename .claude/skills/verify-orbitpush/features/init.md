@@ -11,6 +11,7 @@
 - `init-next` ends with `Next:`, step 1 (build, then `npx orbitpush deploy`) and step 2 (`npx orbitpush domains add www.example.com`).
 - `init-exists` refuses to run when `orbitpush.json` already exists.
 - `init-rollback` deletes the created zones when a later step fails before the config is written.
+- `init-name-taken` checks that the name is free as a storage zone and as a pull zone before creating anything. With `--name` or `--yes` a taken name exits `1` with `The name "<name>" is already taken on bunny.net. Choose another with --name.` and no write; at the prompt it warns `"<name>" is already taken on bunny.net` and asks again, without the taken default.
 
 ## How to get to it (user POV)
 
@@ -32,8 +33,10 @@ Preconditions:
 - **Exists.** Run init again in the work dir of a run where init succeeded. Exit `1`, stderr `orbitpush.json already exists.`, and no new requests in `bunny-state.json`.
 - **Rollback.** In a fresh run, run `$C cli $RUN init -- init --name verify-c --dir public --yes` after `chmod 555 $TMPDIR/orbitpush-verify/$RUN/site`. Exit `1`. The writes in the summary end with `DELETE .../pullzone/1001` and `DELETE .../storagezone/1000`, both zones are gone, and there is no `orbitpush.json`. Run `chmod 755` on the work dir before cleanup. Also: run init with `FAKE_BUNNY_FAIL="POST /pullzone"`. The storage zone is created and then deleted.
 
+- **Name taken.** In a fresh run, run `$C cli $RUN taken FAKE_BUNNY_TAKEN_NAMES=verify-d -- init --name verify-d --dir public --yes`. Exit `1`, stderr `✖ The name "verify-d" is already taken on bunny.net. Choose another with --name.`, the request log has `POST /storagezone/checkavailability` and `POST /pullzone/checkavailability` with `{"Name":"verify-d"}` and no other write, and the summary has no zones. Then run `$C tui $RUN taken-tui FAKE_BUNNY_TAKEN_NAMES=site -- init` and press `Enter` on the default `site`: the screen shows `! "site" is already taken on bunny.net` and the name prompt again with no default; answer `verify-e Enter` and finish the other prompts with `Enter`. Init creates zones named `verify-e`.
+
 ## Gotchas
 
-- The run's state file is shared by every step of a run. A second init with a taken name after `rm orbitpush.json` in the same run fails with `✖ Could not create the storage zone <name>: bunny.net says "The storage zone name is already taken"`; in the same work dir it stops earlier, at `orbitpush.json already exists.` Use a new name or a new run.
+- The run's state file is shared by every step of a run. A second init with a name taken earlier in the run, after `rm orbitpush.json`, fails with `✖ The name "<name>" is already taken on bunny.net. Choose another with --name.`; in the same work dir it stops earlier, at `orbitpush.json already exists.` Use a new name or a new run.
 - The replication checkbox omits the main region, so the arrow count for `NY` depends on the region picked before.
 - A hard kill during zone creation (not an error) skips the rollback. That path is not covered by any recipe.

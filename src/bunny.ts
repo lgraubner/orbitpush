@@ -47,6 +47,8 @@ export type StorageZone = z.infer<typeof StorageZone>;
 export const CreatedZone = z.object({ Id: z.int() });
 export type CreatedZone = z.infer<typeof CreatedZone>;
 
+const Availability = z.object({ Available: z.boolean() });
+
 const Listing = z.array(
   z.object({
     ObjectName: z.string(),
@@ -183,6 +185,20 @@ export async function apiJson<T>(
   const json: unknown = await response.json().catch(() => undefined);
 
   return parseResponse(schema, json, `${request.method} ${request.path}`);
+}
+
+export async function isNameAvailable(apiKey: string, name: string) {
+  const check = (zone: "storagezone" | "pullzone") =>
+    apiJson(apiKey, {
+      schema: Availability,
+      action: `check whether the name ${name} is free`,
+      method: "POST",
+      path: `/${zone}/checkavailability`,
+      body: { Name: name },
+    });
+  const results = await Promise.all([check("storagezone"), check("pullzone")]);
+
+  return results.every((result) => result.Available);
 }
 
 export function findHostname(pullZone: PullZone, host: string | undefined) {

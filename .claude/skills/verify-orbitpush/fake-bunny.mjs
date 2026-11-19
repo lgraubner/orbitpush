@@ -165,9 +165,26 @@ function api(state, url, method, headers, body) {
   const parts = url.pathname.split("/").filter(Boolean);
   const [kind, id, action, guid] = parts;
 
+  if (
+    (kind === "storagezone" || kind === "pullzone") &&
+    id === "checkavailability" &&
+    method === "POST"
+  ) {
+    const name = String(json.Name).toLowerCase();
+    const zones = kind === "storagezone" ? state.storageZones : state.pullZones;
+    const takenNames = (process.env.FAKE_BUNNY_TAKEN_NAMES ?? "")
+      .toLowerCase()
+      .split(",")
+      .filter(Boolean);
+    const taken = takenNames.includes(name) || zones.some((z) => z.Name.toLowerCase() === name);
+    return reply(200, { Available: !taken });
+  }
+
   if (kind === "storagezone") {
     if (!id && method === "POST") {
-      if (state.storageZones.some((z) => z.Name === json.Name)) {
+      if (
+        state.storageZones.some((z) => z.Name.toLowerCase() === String(json.Name).toLowerCase())
+      ) {
         return reply(400, { Message: "The storage zone name is already taken" });
       }
 
@@ -213,7 +230,7 @@ function api(state, url, method, headers, body) {
     }
 
     if (!id && method === "POST") {
-      if (state.pullZones.some((z) => z.Name === json.Name)) {
+      if (state.pullZones.some((z) => z.Name.toLowerCase() === String(json.Name).toLowerCase())) {
         return reply(400, { Message: "The pull zone name is already taken" });
       }
 
