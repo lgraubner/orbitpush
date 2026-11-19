@@ -204,10 +204,9 @@ async function waitForConnection(
 ) {
   const check = async () => {
     const record = await lookUpDnsRecord(host, cdnHost);
-    const connection: Connection =
-      record.state === "matches" || record.state === "unknown"
-        ? await connectHostname(apiKey, pullZoneId, host, hostname)
-        : { status: "dns" };
+    const connection: Connection = pointsToOtherHost(record)
+      ? { status: "dns" }
+      : await connectHostname(apiKey, pullZoneId, host, hostname);
 
     return { record, connection };
   };
@@ -247,6 +246,10 @@ async function waitForConnection(
   return { connection, record, checks };
 }
 
+function pointsToOtherHost(record: DnsRecord) {
+  return record.state === "elsewhere" && record.current.type === "CNAME";
+}
+
 function logDnsCheck(host: string, cdnHost: string, record: DnsRecord) {
   if (record.state === "matches") {
     log.success(`The DNS record of ${host} points to ${cdnHost}`);
@@ -272,7 +275,9 @@ function currentLine(record: DnsRecord, cdnHost: string) {
     case "matches":
       return `current   ${dnsValue(record.current)}   ✔${record.current.type === "A" ? ` (same address as ${cdnHost})` : ""}`;
     case "elsewhere":
-      return `current   ${dnsValue(record.current)}   change this`;
+      return record.current.type === "CNAME"
+        ? `current   ${dnsValue(record.current)}   change this`
+        : `current   ${dnsValue(record.current)}   not an address of ${cdnHost}`;
     case "missing":
       return "current   none   add this record";
     case "unknown":

@@ -25,8 +25,8 @@ Usage:
   orbitpush init                   Create a storage zone + pull zone and write orbitpush.json
   orbitpush deploy                 Upload the build output, sync edge rules and purge the cache
   orbitpush domains add <host>     Add a domain and connect it: waits until its DNS record
-                                   points to the pull zone, then turns on HTTPS. The first one becomes the primary
-                                   domain, later ones redirect to it
+                                   points to the pull zone, then turns on HTTPS. The first
+                                   one becomes the primary domain, later ones redirect to it
   orbitpush domains add <host> --primary
                                    Make a domain the primary domain once it is connected;
                                    the former primary domain then redirects to it

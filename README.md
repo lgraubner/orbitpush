@@ -73,9 +73,13 @@ npx orbitpush domains list
     current   CNAME my-site.b-cdn.net   ✔
 ```
 
-The record matches when its CNAME, or any CNAME it leads to, is `<name>.b-cdn.net`. A record that points to another bunny.net pull zone does not match, even though bunny.net serves the site through it today. A root domain with ALIAS, ANAME or CNAME flattening has no CNAME to read, so there the record matches when its addresses are those of `<name>.b-cdn.net`, a weaker check. If the lookup itself fails, `domains add` says so and relies on bunny.net's check alone.
+The record matches when its CNAME, or any CNAME it leads to, is `<name>.b-cdn.net`. A CNAME that leads elsewhere, such as to another bunny.net pull zone, blocks `domains add`, even though bunny.net would serve the site through it today. In every other case bunny.net's certificate check decides:
 
-Until the record matches, `domains add` waits: it checks again 10 seconds after each check, for up to 15 minutes, and prints the current record each time it changes. Then it gets a free SSL certificate, turns on HTTPS and writes the alias redirects. If DNS takes longer, or you stop it with Ctrl+C, run the same command again later: it continues where it stopped. Without a terminal it checks once and exits with status `1` while the record does not match or the domain is not connected. That includes a domain that is connected but whose record points elsewhere.
+- A root domain with ALIAS, ANAME or CNAME flattening has no CNAME to read. Its addresses are compared with those of `<name>.b-cdn.net`, but bunny.net answers with different addresses in different places, so a difference is shown without blocking.
+- A record the public resolvers do not show yet, for example because they still remember that it was missing, does not block when bunny.net already sees it.
+- If the lookup itself fails, `domains add` says so.
+
+Until the hostname connects, `domains add` waits: it checks again 10 seconds after each check, for up to 15 minutes, and prints the current record each time it changes. Then it gets a free SSL certificate, turns on HTTPS and writes the alias redirects. If DNS takes longer, or you stop it with Ctrl+C, run the same command again later: it continues where it stopped. Without a terminal it checks once and exits with status `1` while the domain is not connected or its CNAME leads elsewhere. That includes a domain that is connected but whose CNAME leads elsewhere.
 
 With `--primary`, the domain becomes the primary domain only once it is connected, and the former primary domain becomes an alias that redirects to it. Until then it stays an alias, so visitors are never sent to a domain without HTTPS.
 
@@ -98,7 +102,7 @@ npx orbitpush domains add www.example.com   # prints the DNS record, exits 1 unt
 - Commit `orbitpush.json` after `init`. Without a terminal, `deploy` never creates a site; it stops when the file is missing.
 - `init` stops unless it gets `--name` and `--dir`, or `--yes`, so a guessed name never creates zones.
 - `deploy`, `disable` and `enable` take no input. `destroy` needs `--yes`.
-- `domains add` checks DNS once instead of waiting and exits `1` while the record does not match or the domain is not connected; run it again a few minutes later. `domains list` exits `1` while any domain is not connected, so a script can poll it.
+- `domains add` checks DNS once instead of waiting and exits `1` while the domain is not connected or its CNAME leads elsewhere; run it again a few minutes later. `domains list` exits `1` while any domain is not connected, so a script can poll it.
 - Errors go to stderr with exit code `1`, an unknown command exits with `2`, and an unknown option stops with `1`, so a typo never falls back to a default.
 - A failed bunny.net request reads `Could not <action>: bunny.net says "<message>"`. Set `ORBITPUSH_DEBUG=1` to also print the request's method, path and HTTP status.
 - Some coding agents run commands in a pseudo-terminal, where orbitpush would ask its questions and wait. Set `CI=1` for them: then nothing asks, and `domains add` checks once instead of waiting up to 15 minutes.

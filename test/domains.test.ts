@@ -1102,7 +1102,7 @@ test("add of a connected hostname whose DNS points to another pull zone fails wi
   expect(writes).toEqual([]);
 });
 
-test("add of a root domain with addresses elsewhere shows them and the flattening hint, and requests no certificate", async () => {
+test("add of a root domain with addresses elsewhere shows them and the flattening hint, and fails when bunny.net refuses too", async () => {
   const config = await site();
   const { certificateChecks, writes } = fakeBunny({
     addresses: { "example.com": ["203.0.113.5"] },
@@ -1110,11 +1110,40 @@ test("add of a root domain with addresses elsewhere shows them and the flattenin
 
   await expect(domains("key", config, ["add", "example.com"], options)).rejects.toThrow();
 
-  expect(certificateChecks).toEqual([]);
+  expect(certificateChecks).toHaveLength(1);
   expect(writes).not.toContain(FORCE_SSL);
   expect(output()).toContain("! Set this DNS record for example.com at your DNS provider:");
-  expect(output()).toContain("current   A 203.0.113.5   change this");
+  expect(output()).toContain("current   A 203.0.113.5   not an address of site.b-cdn.net");
   expect(output()).toMatch(/ALIAS|ANAME|CNAME flattening/);
+});
+
+test("add connects a root domain whose flattened addresses differ from ours when bunny.net issues the certificate", async () => {
+  const config = await site();
+  const { writes } = fakeBunny({
+    records: { "example.com": [undefined] },
+    addresses: { "example.com": ["203.0.113.5"] },
+    dns: new Set(["example.com"]),
+  });
+
+  await domains("key", config, ["add", "example.com"], options);
+
+  expect(output()).toContain("current   A 203.0.113.5   not an address of site.b-cdn.net");
+  expect(writes).toContain(FORCE_SSL);
+  expect(output()).toContain("✔ example.com is connected: https://example.com");
+});
+
+test("add connects a hostname the public resolvers do not see yet when bunny.net issues the certificate", async () => {
+  const config = await site();
+  const { writes } = fakeBunny({
+    records: { "www.example.com": [undefined] },
+    dns: new Set(["www.example.com"]),
+  });
+
+  await domains("key", config, ["add", "www.example.com"], options);
+
+  expect(output()).toContain("current   none   add this record");
+  expect(writes).toContain(FORCE_SSL);
+  expect(output()).toContain("✔ www.example.com is connected: https://www.example.com");
 });
 
 test("add connects a root domain whose address is this pull zone's", async () => {
@@ -1162,7 +1191,7 @@ test("add falls back to bunny.net's check when the DNS lookup fails, and connect
   expect(output()).toContain("current   unknown (DNS lookup failed: ETIMEOUT)");
 });
 
-test("add in a terminal prints the current record only when it changes and requests the certificate once DNS matches", async () => {
+test("add in a terminal prints the current record only when it changes and requests no certificate while the CNAME points elsewhere", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   const config = await site();
   const { checks, certificateChecks, writes } = fakeBunny({
@@ -1180,8 +1209,7 @@ test("add in a terminal prints the current record only when it changes and reque
   await settleWithFakeTimers(domains("key", config, ["add", "www.example.com"], interactive));
 
   expect(checks).toHaveLength(5);
-  expect(certificateChecks).toHaveLength(1);
-  expect(certificateChecks[0]).toBeGreaterThanOrEqual(checks[4]);
+  expect(certificateChecks).toEqual([checks[0], checks[1], checks[4]]);
   expect(writes).toContain(FORCE_SSL);
   expect(count("current   none   add this record")).toBe(1);
   expect(count("current   CNAME other-site.b-cdn.net   change this")).toBe(1);

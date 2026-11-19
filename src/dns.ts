@@ -22,7 +22,7 @@ export async function lookUpDnsRecord(host: string, cdnHost: string): Promise<Dn
 
   try {
     const target = normalize(cdnHost);
-    const chain = await cnameChain(resolver, host);
+    const chain = await cnameChain(resolver, host, target);
     if (chain.length) {
       const current: DnsValue = { type: "CNAME", chain };
       return chain.includes(target)
@@ -45,10 +45,10 @@ export async function lookUpDnsRecord(host: string, cdnHost: string): Promise<Dn
   }
 }
 
-async function cnameChain(resolver: Resolver, host: string) {
+async function cnameChain(resolver: Resolver, host: string, target: string) {
   const chain: string[] = [];
   let name = normalize(host);
-  while (chain.length < MAX_CNAME_HOPS) {
+  while (chain.length < MAX_CNAME_HOPS && name !== target) {
     const [next] = await records(() => resolver.resolveCname(name));
     if (!next) break;
 

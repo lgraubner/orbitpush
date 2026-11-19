@@ -55,6 +55,15 @@ test("a CNAME to this pull zone matches and lists the chain without the host", a
   });
 });
 
+test("a CNAME to this pull zone matches even when a lookup of the pull zone's own name fails", async () => {
+  fakeDns({
+    "www.example.com": { cname: ["site.b-cdn.net"] },
+    [CDN]: { ...CDN_ZONE, error: { cname: "ESERVFAIL" } },
+  });
+
+  expect(await lookUpDnsRecord("www.example.com", CDN)).toMatchObject({ state: "matches" });
+});
+
 test("a CNAME matches case-insensitively and with a trailing dot, and the chain is normalized", async () => {
   fakeDns({ "www.example.com": { cname: ["Site.B-CDN.net."] }, [CDN]: CDN_ZONE });
 
