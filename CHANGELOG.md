@@ -4,6 +4,8 @@ User-visible changes to orbitpush: commands, flags, exit codes, terminal output,
 
 ## Unreleased
 
+## 0.3.0 - 2026-11-19
+
 ### Removed
 
 - **Breaking:** `init` no longer takes `--domain` and `--alias`. Add domains after `init` with `orbitpush domains add <host>`, or list them in `orbitpush.json` before `deploy`.

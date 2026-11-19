@@ -1,6 +1,6 @@
 {
   "name": "orbitpush",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Deploy static sites to your own bunny.net storage zone and pull zone",
   "keywords": [
     "bunny.net",
