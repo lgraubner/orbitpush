@@ -50,9 +50,6 @@ if (process.argv[2] === "summary") {
   installDns();
 }
 
-// FAKE_DNS="www.example.test=verify-m.b-cdn.net,example.test=A:192.0.2.1" sets CNAME or A records;
-// every other name has no record, *.b-cdn.net resolves to 192.0.2.1, and no lookup leaves the process.
-// FAKE_DNS_FAIL=<code> fails every lookup with that resolver error code, such as ETIMEOUT.
 function installDns() {
   const records = new Map(
     (process.env.FAKE_DNS ?? "")
