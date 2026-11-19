@@ -26,7 +26,7 @@ Each prompt can be skipped with a flag; an option no command knows stops with an
 npx orbitpush init --name my-site --dir dist --region DE --delivery-region EU --delivery-region US --yes
 ```
 
-The pull zone and storage zone names are global across bunny.net. If the name is taken, choose another one.
+The pull zone and storage zone names are global across bunny.net. `init` checks that the name is free before it creates anything. At the prompt it asks again for a taken name; with `--name` or `--yes` it stops with exit code `1` and asks you to choose another with `--name`.
 
 If `init` fails before `orbitpush.json` is written, it deletes the zones it just created, so you can run it again with the same name. If that cleanup fails too, `init` names the zone to delete in the dashboard. Failures after that point, such as a missing SSL certificate, are fixed by the next deploy.
 

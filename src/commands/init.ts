@@ -11,6 +11,7 @@ import {
   CreatedZone,
   envApiKey,
   geoZoneFlags,
+  isNameAvailable,
 } from "@/bunny.ts";
 import {
   type Config,
@@ -51,8 +52,7 @@ export async function init(
   if (existsSync(CONFIG_FILE)) throw new Error(`${CONFIG_FILE} already exists.`);
 
   const prompt = interactive && !flags.yes;
-  const ask = async <T>(flag: T | undefined, fallback: T, question: () => Promise<T>) =>
-    flag ?? (prompt ? question() : fallback);
+  const ask: Ask = async (flag, fallback, question) => flag ?? (prompt ? question() : fallback);
 
   const defaultName = basename(process.cwd())
     .toLowerCase()
@@ -66,17 +66,7 @@ export async function init(
 
   const apiKey = envApiKey() ?? (prompt ? await promptApiKey() : apiKeyFromEnv());
 
-  const validName = (v: string) => /^[a-z0-9-]+$/i.test(v) || "Only letters, numbers and dashes";
-  const name = await ask(flags.name, defaultName, () =>
-    input({
-      message: "Project name (used for storage zone and pull zone)",
-      default: defaultName,
-      validate: validName,
-    }),
-  );
-  if (validName(name) !== true) {
-    throw new Error(`Invalid name "${name}": only letters, numbers and dashes`);
-  }
+  const name = await chooseName(apiKey, flags.name, defaultName, prompt);
 
   const outputDir = await ask(flags.dir, defaultDir, () =>
     input({
@@ -86,35 +76,9 @@ export async function init(
         !deploying || existsSync(v) || `${v} not found. Build the site, then run deploy again`,
     }),
   );
+  const { region, replicationRegions, geoZones } = await askRegions(flags, ask);
 
-  const regionAnswer = await ask(flags.region, "DE", () =>
-    select({ message: "Main storage region", choices: STORAGE_REGIONS, default: "DE" }),
-  );
-  const region = Region.safeParse(regionAnswer.toUpperCase()).data;
-  if (!region) throw new Error(`Region must be one of ${STORAGE_REGIONS.join(", ")}`);
-
-  const replicationAnswer: string[] = await ask(listFlag(flags["replication-region"]), [], () =>
-    checkbox({
-      message: "Storage replication regions (cannot be removed later)",
-      choices: STORAGE_REGIONS.filter((r) => r !== region),
-    }),
-  );
-  const replicationRegions = parseList(Region, replicationAnswer, "--replication-region");
-  if (replicationRegions.includes(region)) {
-    throw new Error(`Invalid --replication-region: ${region} is the main region`);
-  }
-
-  const deliveryAnswer: string[] = await ask(listFlag(flags["delivery-region"]), ["EU", "US"], () =>
-    checkbox({
-      message: "CDN delivery regions",
-      choices: GEO_ZONES.map((value) => ({ value, checked: value === "EU" || value === "US" })),
-      validate: (v) => v.length > 0 || "Select at least one",
-    }),
-  );
-  const geoZones = parseList(GeoZone, deliveryAnswer, "--delivery-region");
-  if (!geoZones.length) {
-    throw new Error(`Invalid --delivery-region: name at least one of ${GEO_ZONES.join(", ")}`);
-  }
+  if (!(await isNameAvailable(apiKey, name))) throw nameTaken(name);
 
   log.step(`Creating storage zone ${name}`);
   const storageZone = await apiJson(apiKey, {
@@ -207,6 +171,81 @@ async function promptApiKey() {
   log.step(`Find your API key at ${API_KEY_URL}`);
 
   return password({ message: "Bunny API key", mask: true, validate: (v) => !!v.trim() });
+}
+
+type Ask = <T>(flag: T | undefined, fallback: T, question: () => Promise<T>) => Promise<T>;
+
+async function askRegions(flags: InitFlags, ask: Ask) {
+  const regionAnswer = await ask(flags.region, "DE", () =>
+    select({ message: "Main storage region", choices: STORAGE_REGIONS, default: "DE" }),
+  );
+  const region = Region.safeParse(regionAnswer.toUpperCase()).data;
+  if (!region) throw new Error(`Region must be one of ${STORAGE_REGIONS.join(", ")}`);
+
+  const replicationAnswer: string[] = await ask(listFlag(flags["replication-region"]), [], () =>
+    checkbox({
+      message: "Storage replication regions (cannot be removed later)",
+      choices: STORAGE_REGIONS.filter((r) => r !== region),
+    }),
+  );
+  const replicationRegions = parseList(Region, replicationAnswer, "--replication-region");
+  if (replicationRegions.includes(region)) {
+    throw new Error(`Invalid --replication-region: ${region} is the main region`);
+  }
+
+  const deliveryAnswer: string[] = await ask(listFlag(flags["delivery-region"]), ["EU", "US"], () =>
+    checkbox({
+      message: "CDN delivery regions",
+      choices: GEO_ZONES.map((value) => ({ value, checked: value === "EU" || value === "US" })),
+      validate: (v) => v.length > 0 || "Select at least one",
+    }),
+  );
+  const geoZones = parseList(GeoZone, deliveryAnswer, "--delivery-region");
+  if (!geoZones.length) {
+    throw new Error(`Invalid --delivery-region: name at least one of ${GEO_ZONES.join(", ")}`);
+  }
+
+  return { region, replicationRegions, geoZones };
+}
+
+const validName = (v: string) => /^[a-z0-9-]+$/i.test(v) || "Only letters, numbers and dashes";
+
+async function chooseName(
+  apiKey: string,
+  flag: string | undefined,
+  defaultName: string,
+  prompt: boolean,
+) {
+  if (prompt && flag === undefined) {
+    return promptFreeName(apiKey, defaultName);
+  }
+
+  const name = flag ?? defaultName;
+  if (validName(name) !== true) {
+    throw new Error(`Invalid name "${name}": only letters, numbers and dashes`);
+  }
+
+  if (prompt && !(await isNameAvailable(apiKey, name))) throw nameTaken(name);
+
+  return name;
+}
+
+const nameTaken = (name: string) =>
+  new Error(`The name "${name}" is already taken on bunny.net. Choose another with --name.`);
+
+async function promptFreeName(apiKey: string, defaultName: string) {
+  let fallback: string | undefined = defaultName;
+  for (;;) {
+    const name = await input({
+      message: "Project name (used for storage zone and pull zone)",
+      default: fallback,
+      validate: validName,
+    });
+    if (await isNameAvailable(apiKey, name)) return name;
+
+    log.warn(`"${name}" is already taken on bunny.net`);
+    if (name.toLowerCase() === fallback?.toLowerCase()) fallback = undefined;
+  }
 }
 
 async function deleteNewZones(

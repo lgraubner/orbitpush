@@ -12,6 +12,7 @@ User-visible changes to orbitpush: commands, flags, exit codes, terminal output,
 
 - `domains add` looks up the DNS record itself and prints the expected record next to the current one, whether or not they match. A CNAME that leads to another bunny.net pull zone no longer counts as done: `domains add` waits for it to change, and without a terminal it exits `1`, even for a domain that is already connected.
 - `deploy` prints no DNS records. A domain that bunny.net refuses a certificate for gets one warning after the deploy, pointing to `orbitpush domains add <host>`.
+- `init` and the first `deploy` check that the project name is free on bunny.net before creating anything. A taken name asks again at the prompt and stops with `The name "<name>" is already taken on bunny.net. Choose another with --name.` without one, instead of creating a storage zone and deleting it again.
 - A failed bunny.net request reads `Could not <action>: bunny.net says "<message>"` instead of the request's method, path and HTTP status. Set `ORBITPUSH_DEBUG=1` to print those too.
 - When a domain is already on another pull zone, `domains add` and `deploy` name that pull zone and link its hostnames in the dashboard, or say that another bunny.net account uses the domain.
 
