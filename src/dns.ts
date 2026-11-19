@@ -31,11 +31,13 @@ export async function lookUpDnsRecord(host: string, cdnHost: string): Promise<Dn
       return { state: "other-pull-zone", current: { chain, addresses: [] } };
     }
 
+    const expectedLookup = addressesOf(resolver, target);
+    expectedLookup.catch(() => undefined);
     const addresses = await addressesOf(resolver, chain.at(-1) ?? host);
     if (!chain.length && !addresses.length) return { state: "missing" };
 
     const current = { chain, addresses };
-    const expected = new Set(await addressesOf(resolver, target));
+    const expected = new Set(await expectedLookup);
 
     return addresses.some((address) => expected.has(address))
       ? { state: "matches", by: "address", current }

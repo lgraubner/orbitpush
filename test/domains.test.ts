@@ -1234,3 +1234,13 @@ test("add in a terminal keeps waiting while DNS matches but bunny.net still says
   expect(count("current   CNAME site.b-cdn.net   ✔")).toBe(1);
   expect(output()).toContain("✔ www.example.com is connected: https://www.example.com");
 });
+
+test("add of a root domain whose DNS lookup fails gives no ALIAS hint, since nothing is known about the record", async () => {
+  const config = await site();
+  fakeBunny({ dns: new Set(["example.com"]), dnsError: "ETIMEOUT" });
+
+  await domains("key", config, ["add", "example.com"], options);
+
+  expect(output()).toContain("current   unknown (DNS lookup failed: ETIMEOUT)");
+  expect(output()).not.toMatch(/ALIAS|ANAME|flattening/);
+});

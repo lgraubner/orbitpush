@@ -257,7 +257,7 @@ function logDnsCheck(host: string, cdnHost: string, record: DnsRecord) {
   }
 
   logRecordLines(cdnHost, record);
-  if (record.state !== "matches" && host.split(".").length === 2) {
+  if (record.state !== "matches" && record.state !== "unknown" && host.split(".").length === 2) {
     log.detail("At the root of a domain, use ALIAS, ANAME or CNAME flattening instead of CNAME.");
   }
 }
@@ -300,7 +300,7 @@ function dnsProblem(record: DnsRecord, cdnHost: string) {
     case "other-pull-zone":
       return `its DNS record leads to another pull zone (${dnsValue(record.current)}), not to ${cdnHost}`;
     case "elsewhere":
-      return `its DNS record points to ${dnsValue(record.current)}, not to ${cdnHost}`;
+      return `bunny.net does not see a DNS record that points to ${cdnHost}, and the public resolvers show ${dnsValue(record.current)}`;
     case "missing":
       return "it has no DNS record";
     case "matches":
