@@ -12,6 +12,7 @@ export async function disable(apiKey: string, config: Config) {
 
   log.step("Blocking all requests");
   await api(apiKey, {
+    action: "block all requests",
     method: "POST",
     path: `/pullzone/${config.pullZoneId}/edgerules/addOrUpdate`,
     body: disabledRule(),

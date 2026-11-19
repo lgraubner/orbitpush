@@ -4,6 +4,11 @@ User-visible changes to orbitpush: commands, flags, exit codes, terminal output,
 
 ## Unreleased
 
+### Changed
+
+- A failed bunny.net request reads `Could not <action>: bunny.net says "<message>"` instead of the request's method, path and HTTP status. Set `ORBITPUSH_DEBUG=1` to print those too.
+- When a domain is already on another pull zone, `domains add`, `deploy` and `init` name that pull zone and link its hostnames in the dashboard, or say that another bunny.net account uses the domain.
+
 ## 0.2.0 - 2026-11-18
 
 ### Changed

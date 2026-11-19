@@ -126,6 +126,7 @@ export async function init(
   log.step(`Creating storage zone ${name}`);
   const storageZone = await apiJson(apiKey, {
     schema: CreatedZone,
+    action: `create the storage zone ${name}`,
     method: "POST",
     path: "/storagezone",
     body: {
@@ -142,6 +143,7 @@ export async function init(
     log.step(`Creating pull zone ${name}`);
     pullZone = await apiJson(apiKey, {
       schema: CreatedZone,
+      action: `create the pull zone ${name}`,
       method: "POST",
       path: "/pullzone",
       body: {
@@ -241,10 +243,11 @@ async function deleteNewZones(
   }: { name: string; storageZone: CreatedZone; pullZone: CreatedZone | undefined },
 ) {
   const remove = (path: string, label: string) =>
-    api(apiKey, { method: "DELETE", path }).catch((error: unknown) =>
-      log.warn(
-        `Could not delete ${label}. Delete it in the bunny.net dashboard. ${errorMessage(error)}`,
-      ),
+    api(apiKey, { action: `delete the ${label}`, method: "DELETE", path }).catch(
+      (error: unknown) => {
+        log.warn(errorMessage(error));
+        log.detail(`Delete the ${label} in the bunny.net dashboard.`);
+      },
     );
 
   if (pullZone) await remove(`/pullzone/${pullZone.Id}`, `pull zone ${name} (${pullZone.Id})`);

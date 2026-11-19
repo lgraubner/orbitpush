@@ -91,6 +91,7 @@ npx orbitpush domains add www.example.com   # prints the DNS record, exits 1 unt
 - `deploy`, `disable` and `enable` take no input. `destroy` needs `--yes`.
 - `domains add` checks DNS once instead of waiting and exits `1` while the domain is not connected; run it again a few minutes later. `domains list` exits `1` while any domain is not connected, so a script can poll it.
 - Errors go to stderr with exit code `1`, an unknown command exits with `2`, and an unknown option stops with `1`, so a typo never falls back to a default.
+- A failed bunny.net request reads `Could not <action>: bunny.net says "<message>"`. Set `ORBITPUSH_DEBUG=1` to also print the request's method, path and HTTP status.
 - Some coding agents run commands in a pseudo-terminal, where orbitpush would ask its questions and wait. Set `CI=1` for them: then nothing asks, and `domains add` checks once instead of waiting up to 15 minutes.
 
 ## `orbitpush.json`

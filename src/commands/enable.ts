@@ -14,6 +14,7 @@ export async function enable(apiKey: string, config: Config) {
   log.step("Removing the block on all requests");
   for (const block of blocks) {
     await api(apiKey, {
+      action: "remove the block on all requests",
       method: "DELETE",
       path: `/pullzone/${config.pullZoneId}/edgerules/${block.Guid}`,
     });

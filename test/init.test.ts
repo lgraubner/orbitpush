@@ -53,7 +53,10 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-function fakeBunny({ pullZoneTaken = false } = {}) {
+function fakeBunny({
+  pullZoneTaken = false,
+  failDelete,
+}: { pullZoneTaken?: boolean; failDelete?: string } = {}) {
   const writes: string[] = [];
   const bodies: Record<string, unknown> = {};
 
@@ -64,6 +67,9 @@ function fakeBunny({ pullZoneTaken = false } = {}) {
 
     if (method !== "GET") writes.push(`${method} ${url}`);
     if (typeof init.body === "string") bodies[`${method} ${url}`] = JSON.parse(init.body);
+    if (method === "DELETE" && url === failDelete) {
+      return new Response(JSON.stringify({ Message: "Zone is locked" }), { status: 500 });
+    }
     if (url === "https://api.bunny.net/storagezone" && method === "POST") return json({ Id: 1 });
     if (url === "https://api.bunny.net/pullzone" && method === "POST") {
       return pullZoneTaken
@@ -369,4 +375,19 @@ test("init prints the DNS record for each hostname it adds, with the command tha
       ),
     );
   }
+});
+
+test("init tells the user to delete a zone in the dashboard when its cleanup fails", async () => {
+  const { writes } = fakeBunny({ failDelete: "https://api.bunny.net/pullzone/2" });
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  await chmod(dir, 0o555);
+
+  await expect(init({ name: "site", yes: true }, false)).rejects.toMatchObject({ code: "EACCES" });
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+
+  expect(writes).toContain("DELETE https://api.bunny.net/pullzone/2");
+  expect(output).toContain(
+    'Could not delete the pull zone site (2): bunny.net says "Zone is locked"',
+  );
+  expect(output).toMatch(/^\W*Delete the pull zone site \(2\) in the bunny\.net dashboard\.$/m);
 });

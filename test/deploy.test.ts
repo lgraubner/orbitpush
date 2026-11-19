@@ -95,6 +95,8 @@ function fakeBunny({
   staleRecord,
   originType = 2,
   storageZoneId = 1,
+  addHostnameError,
+  account = [],
 }: {
   storageZone?: Record<string, unknown>;
   edgeRules?: Record<string, unknown>[];
@@ -109,6 +111,8 @@ function fakeBunny({
   staleRecord?: { version: unknown; stale: Record<string, unknown> } | string;
   originType?: number;
   storageZoneId?: number | null;
+  addHostnameError?: { status: number; body: unknown };
+  account?: { Id: number; Name: string; Hostnames: { Value: string }[] }[];
 } = {}) {
   let unauthorized = storageUnauthorized;
   const requests: string[] = [];
@@ -150,6 +154,21 @@ function fakeBunny({
         setTimeout(resolve, slowAssets && !path.endsWith(".html") ? 30 : 0),
       );
       uploads.push(`done ${path}`);
+    }
+
+    if (url === "https://api.bunny.net/pullzone/2/addHostname" && addHostnameError) {
+      return new Response(JSON.stringify(addHostnameError.body), {
+        status: addHostnameError.status,
+      });
+    }
+
+    if (url === "https://api.bunny.net/pullzone?page=1&perPage=1000" && method === "GET") {
+      return json({
+        Items: account,
+        CurrentPage: 1,
+        TotalItems: account.length,
+        HasMoreItems: false,
+      });
     }
 
     if (url === `https://api.bunny.net/storagezone/${storageZoneId}` && method === "GET") {
@@ -587,6 +606,30 @@ test("deploy adds a new domain, requests its certificate and forces SSL", async 
   });
 });
 
+test("deploy names the pull zone in the account that already has a domain", async () => {
+  const dir = await outputDir();
+  vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny({
+    hostnames: [{ Value: "site.b-cdn.net", HasCertificate: true, ForceSSL: true }],
+    addHostnameError: {
+      status: 400,
+      body: {
+        ErrorKey: "pullzone.hostname_already_registered",
+        Field: "Hostname",
+        Message: "The hostname is already registered.",
+      },
+    },
+    account: [
+      { Id: 2, Name: "site", Hostnames: [{ Value: "site.b-cdn.net" }] },
+      { Id: 7, Name: "blog", Hostnames: [{ Value: "www.example.com" }] },
+    ],
+  });
+
+  await expect(deploy("key", { ...config(dir), domain: "www.example.com" })).rejects.toThrow(
+    "www.example.com is already on the pull zone blog in your bunny.net account. Run `orbitpush domains remove www.example.com` in that project, or remove it in the dashboard: https://dash.bunny.net/cdn/7/general/hostnames — then try again.",
+  );
+});
+
 test("deploy prints the DNS record for each hostname it adds to the pull zone", async () => {
   const dir = await outputDir();
   const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -786,7 +829,7 @@ test("deploy fails without writing when the storage zone keeps rejecting its pas
 
   const error = await settleWithFakeTimers(deploy("key", config(dir)).catch((e: unknown) => e));
 
-  expect(String(error)).toMatch(/HTTP 401/);
+  expect(error).toMatchObject({ status: 401 });
   expect(writes).toEqual([]);
 });
 
@@ -1124,18 +1167,34 @@ test("deploy starts no further upload once one has failed", async () => {
   vi.spyOn(process.stderr, "write").mockReturnValue(true);
   const { uploads } = fakeBunny({ slowAssets: true, failUpload: "assets/f0.js" });
 
-  await expect(deploy("key", config(dir))).rejects.toThrow(/PUT \/assets\/f0\.js failed/);
+  await expect(deploy("key", config(dir))).rejects.toThrow(/Could not upload \/assets\/f0\.js/);
   await new Promise((resolve) => setTimeout(resolve, 100));
 
   expect(uploads.filter((u) => u.startsWith("start "))).toHaveLength(8);
 });
 
 test.each([
-  ["a bunny.net API request", "https://api.bunny.net/storagezone/1", /GET \/storagezone\/1 failed/],
-  ["a storage zone listing", "https://storage.bunnycdn.com/site/", /GET \/ failed/],
-  ["a stale file deletion", "https://storage.bunnycdn.com/site/gone.js", /DELETE \/gone\.js/],
+  [
+    "a bunny.net API request",
+    "https://api.bunny.net/storagezone/1",
+    /Could not read the storage zone/,
+  ],
+  [
+    "a storage zone listing",
+    "https://storage.bunnycdn.com/site/",
+    /Could not list the files in \/:/,
+  ],
+  [
+    "a stale file deletion",
+    "https://storage.bunnycdn.com/site/gone.js",
+    /Could not delete \/gone\.js/,
+  ],
   ["a stale record read", RECORD_URL, /\.orbitpush\/stale\.json/],
-  ["a file upload", "https://storage.bunnycdn.com/site/index.html", /PUT \/index\.html failed/],
+  [
+    "a file upload",
+    "https://storage.bunnycdn.com/site/index.html",
+    /Could not upload \/index\.html/,
+  ],
 ])("deploy fails instead of hanging when %s never answers", async (_, url, message) => {
   const timeout = AbortSignal.timeout.bind(AbortSignal);
   vi.spyOn(AbortSignal, "timeout").mockImplementation(() => timeout(10));

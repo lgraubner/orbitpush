@@ -174,6 +174,15 @@ function api(state, url, method, headers, body) {
   }
 
   if (kind === "pullzone") {
+    if (!id && method === "GET") {
+      return reply(200, {
+        Items: state.pullZones,
+        CurrentPage: 1,
+        TotalItems: state.pullZones.length,
+        HasMoreItems: false,
+      });
+    }
+
     if (!id && method === "POST") {
       if (state.pullZones.some((z) => z.Name === json.Name)) {
         return reply(400, { Message: "The pull zone name is already taken" });
@@ -218,6 +227,19 @@ function api(state, url, method, headers, body) {
     }
 
     if (action === "addHostname" && method === "POST") {
+      const host = json.Hostname.toLowerCase();
+      const taken = (process.env.FAKE_BUNNY_TAKEN ?? "").toLowerCase().split(",").includes(host);
+      if (
+        taken ||
+        state.pullZones.some((z) => z.Hostnames.some((h) => h.Value.toLowerCase() === host))
+      ) {
+        return reply(400, {
+          ErrorKey: "pullzone.hostname_already_registered",
+          Field: "Hostname",
+          Message: "The hostname is already registered.",
+        });
+      }
+
       zone.Hostnames.push({ Value: json.Hostname, HasCertificate: false, ForceSSL: false });
       return reply(204);
     }

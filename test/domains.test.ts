@@ -5,6 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { ApiError } from "../src/bunny.ts";
 import { type Config, readConfig, writeConfig } from "../src/config.ts";
 import { Cancelled, domains } from "../src/commands/domains.ts";
 import { domainRules, isAliasRule } from "../src/rules.ts";
@@ -24,6 +25,7 @@ afterEach(() => {
   process.chdir(cwd);
   vi.restoreAllMocks();
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 const output = () => stripVTControlCharacters(stderr.mock.calls.join(""));
@@ -47,6 +49,7 @@ async function site(over: Partial<Config> = {}): Promise<Config> {
 }
 
 type Hostname = { Value: string; HasCertificate: boolean; ForceSSL: boolean };
+type AccountPullZone = { Id: number; Name: string; Hostnames: { Value: string }[] };
 type Rule = { Guid: string; Description: string | null; OrderIndex: number };
 
 const connected = (Value: string): Hostname => ({ Value, HasCertificate: true, ForceSSL: true });
@@ -68,6 +71,9 @@ function fakeBunny({
   dnsFromCheck = Infinity,
   certificateError,
   refuse = new Set<string>(),
+  addHostnameError,
+  account = [],
+  hasMoreItems = false,
 }: {
   hostnames?: Hostname[];
   edgeRules?: Rule[];
@@ -75,6 +81,9 @@ function fakeBunny({
   dnsFromCheck?: number;
   certificateError?: string;
   refuse?: Set<string>;
+  addHostnameError?: { status: number; body: unknown };
+  account?: AccountPullZone[];
+  hasMoreItems?: boolean;
 } = {}) {
   const zone = { hostnames: [...hostnames], rules: [...edgeRules] };
   const requests: string[] = [];
@@ -94,6 +103,15 @@ function fakeBunny({
     if (method !== "GET") writes.push(key);
     if (body !== undefined) (bodies[key] ??= []).push(body);
     if (refuse.has(key)) return json({ Message: "Internal error" }, 500);
+
+    if (key === `GET ${API}/pullzone?page=1&perPage=1000`) {
+      return json({
+        Items: account,
+        CurrentPage: 1,
+        TotalItems: account.length,
+        HasMoreItems: hasMoreItems,
+      });
+    }
 
     if (key === `GET ${API}/pullzone/2`) {
       return json({
@@ -119,6 +137,7 @@ function fakeBunny({
     }
 
     if (key === `POST ${API}/pullzone/2/addHostname`) {
+      if (addHostnameError) return json(addHostnameError.body, addHostnameError.status);
       zone.hostnames.push({ Value: body.Hostname, HasCertificate: false, ForceSSL: false });
     }
     if (key === `POST ${API}/pullzone/2/setForceSSL`) {
@@ -728,4 +747,249 @@ test("the DNS wait status shows as many checks as have run when Ctrl+C stops it"
   await settleWithFakeTimers(done);
 
   expect(checkCounts()).toEqual([1, 2, 3, 4, 5]);
+});
+
+const ALREADY_REGISTERED = {
+  status: 400,
+  body: {
+    ErrorKey: "pullzone.hostname_already_registered",
+    Field: "Hostname",
+    Message: "The hostname is already registered.",
+  },
+};
+const ACCOUNT_LIST = `GET ${API}/pullzone?page=1&perPage=1000`;
+const onPullZone = (host: string, name: string, id: number) =>
+  `${host} is already on the pull zone ${name} in your bunny.net account. Run \`orbitpush domains remove ${host}\` in that project, or remove it in the dashboard: https://dash.bunny.net/cdn/${id}/general/hostnames — then try again.`;
+const otherAccount = (host: string) =>
+  `${host} is already used by another bunny.net account. Remove it there, or contact bunny.net support if you don't have access to that account.`;
+const addError = (config: Config, host: string) =>
+  domains("key", config, ["add", host], options).then(
+    () => {
+      throw new Error("expected domains add to fail");
+    },
+    (error: unknown) => error,
+  );
+
+test("add of a hostname on another pull zone in the account names that pull zone", async () => {
+  const config = await site();
+  const before = await fileText();
+  const { requests } = fakeBunny({
+    addHostnameError: ALREADY_REGISTERED,
+    account: [
+      { Id: 2, Name: "site", Hostnames: [{ Value: "site.b-cdn.net" }] },
+      {
+        Id: 7,
+        Name: "blog",
+        Hostnames: [{ Value: "blog.b-cdn.net" }, { Value: "WWW.Example.com" }],
+      },
+    ],
+  });
+
+  const error = await addError(config, "www.example.com");
+
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({
+    message: onPullZone("www.example.com", "blog", 7),
+    status: 400,
+    errorKey: "pullzone.hostname_already_registered",
+  });
+  expect(requests.filter((r) => r === ACCOUNT_LIST)).toHaveLength(1);
+  expect(await fileText()).toBe(before);
+});
+
+test("add of a hostname covered by a wildcard on another pull zone names that pull zone", async () => {
+  const config = await site();
+  fakeBunny({
+    addHostnameError: ALREADY_REGISTERED,
+    account: [
+      { Id: 2, Name: "site", Hostnames: [{ Value: "site.b-cdn.net" }] },
+      { Id: 9, Name: "wild", Hostnames: [{ Value: "*.example.com" }] },
+    ],
+  });
+
+  const error = await addError(config, "foo.example.com");
+
+  expect(error).toMatchObject({ message: onPullZone("foo.example.com", "wild", 9) });
+});
+
+test("add of a hostname no pull zone in the account has says another account uses it", async () => {
+  const config = await site();
+  const before = await fileText();
+  const { requests } = fakeBunny({
+    addHostnameError: ALREADY_REGISTERED,
+    account: [
+      { Id: 2, Name: "site", Hostnames: [{ Value: "site.b-cdn.net" }] },
+      { Id: 7, Name: "blog", Hostnames: [{ Value: "www.example.org" }] },
+    ],
+  });
+
+  const error = await addError(config, "www.example.com");
+
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({
+    message: otherAccount("www.example.com"),
+    status: 400,
+    errorKey: "pullzone.hostname_already_registered",
+  });
+  expect(requests.filter((r) => r === ACCOUNT_LIST)).toHaveLength(1);
+  expect(await fileText()).toBe(before);
+});
+
+test.each([
+  [
+    "an unknown error key",
+    { ErrorKey: "pullzone.something_else", Message: "Nope." },
+    "pullzone.something_else",
+  ],
+  ["no error key", { Message: "Nope." }, undefined],
+])("add with %s quotes bunny.net's message and looks up no owner", async (_, body, errorKey) => {
+  const config = await site();
+  const { requests } = fakeBunny({ addHostnameError: { status: 400, body } });
+
+  const error = await addError(config, "www.example.com");
+
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({
+    message: 'Could not add the hostname www.example.com: bunny.net says "Nope."',
+    status: 400,
+    errorKey,
+  });
+  expect(requests).toContain(`POST ${API}/pullzone/2/addHostname`);
+  expect(requests).not.toContain(ACCOUNT_LIST);
+});
+
+test("ORBITPUSH_DEBUG=1 appends the method, path and status to a failed call", async () => {
+  vi.stubEnv("ORBITPUSH_DEBUG", "1");
+  const config = await site();
+  fakeBunny({ addHostnameError: { status: 400, body: { Message: "Nope." } } });
+
+  const error = await addError(config, "www.example.com");
+
+  expect(error).toMatchObject({
+    message:
+      'Could not add the hostname www.example.com: bunny.net says "Nope." (POST /pullzone/2/addHostname, HTTP 400)',
+  });
+});
+
+test("ORBITPUSH_DEBUG=1 appends the method, path and status to the hostname owner message", async () => {
+  vi.stubEnv("ORBITPUSH_DEBUG", "1");
+  const config = await site();
+  fakeBunny({
+    addHostnameError: ALREADY_REGISTERED,
+    account: [{ Id: 7, Name: "blog", Hostnames: [{ Value: "www.example.com" }] }],
+  });
+
+  const error = await addError(config, "www.example.com");
+
+  expect(error).toMatchObject({
+    message: `${onPullZone("www.example.com", "blog", 7)} (POST /pullzone/2/addHostname, HTTP 400)`,
+  });
+});
+
+test("add falls back to a general message when the pull zone lookup fails", async () => {
+  const config = await site();
+  const before = await fileText();
+  const { requests } = fakeBunny({
+    addHostnameError: ALREADY_REGISTERED,
+    refuse: new Set([ACCOUNT_LIST]),
+  });
+
+  const error = await addError(config, "www.example.com");
+
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({
+    message:
+      "Could not add the hostname www.example.com: the hostname is already on another pull zone",
+    status: 400,
+    errorKey: "pullzone.hostname_already_registered",
+  });
+  expect(requests).toContain(ACCOUNT_LIST);
+  expect(await fileText()).toBe(before);
+});
+
+test("add names the pull zone with the exact hostname over one with a matching wildcard", async () => {
+  const config = await site();
+  fakeBunny({
+    addHostnameError: ALREADY_REGISTERED,
+    account: [
+      { Id: 9, Name: "wild", Hostnames: [{ Value: "*.example.com" }] },
+      { Id: 7, Name: "blog", Hostnames: [{ Value: "www.example.com" }] },
+    ],
+  });
+
+  const error = await addError(config, "www.example.com");
+
+  expect(error).toMatchObject({ message: onPullZone("www.example.com", "blog", 7) });
+});
+
+test("add carries on when the account listing shows the hostname on this pull zone already", async () => {
+  const config = await site();
+  const { requests } = fakeBunny({
+    addHostnameError: ALREADY_REGISTERED,
+    account: [{ Id: 2, Name: "site", Hostnames: [{ Value: "www.example.com" }] }],
+    dns: new Set(["www.example.com"]),
+  });
+
+  await domains("key", config, ["add", "www.example.com"], options);
+
+  expect(await readConfig()).toMatchObject({ domain: "www.example.com" });
+  expect(requests).toContain(ACCOUNT_LIST);
+  expect(requests).toContain(`GET ${API}/pullzone/loadFreeCertificate?hostname=www.example.com`);
+});
+
+test("add does not blame another account when the account listing is incomplete", async () => {
+  const config = await site();
+  const before = await fileText();
+  fakeBunny({
+    addHostnameError: ALREADY_REGISTERED,
+    account: [{ Id: 7, Name: "blog", Hostnames: [{ Value: "www.example.org" }] }],
+    hasMoreItems: true,
+  });
+
+  const error = await addError(config, "www.example.com");
+
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({
+    message:
+      "Could not add the hostname www.example.com: the hostname is already on another pull zone",
+    status: 400,
+    errorKey: "pullzone.hostname_already_registered",
+  });
+  expect(await fileText()).toBe(before);
+});
+
+test("add fails when only a wildcard on this pull zone covers the hostname", async () => {
+  const config = await site();
+  const before = await fileText();
+  const { requests } = fakeBunny({
+    addHostnameError: ALREADY_REGISTERED,
+    account: [{ Id: 2, Name: "site", Hostnames: [{ Value: "*.example.com" }] }],
+    dns: new Set(["www.example.com"]),
+  });
+
+  const error = await addError(config, "www.example.com");
+
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({
+    message: onPullZone("www.example.com", "site", 2),
+    errorKey: "pullzone.hostname_already_registered",
+  });
+  expect(requests).toContain(ACCOUNT_LIST);
+  expect(await fileText()).toBe(before);
+});
+
+test("add with an empty error key quotes bunny.net's message and looks up no owner", async () => {
+  const config = await site();
+  const { requests } = fakeBunny({
+    addHostnameError: { status: 400, body: { ErrorKey: "", Message: "Invalid request" } },
+  });
+
+  const error = await addError(config, "www.example.com");
+
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({
+    message: 'Could not add the hostname www.example.com: bunny.net says "Invalid request"',
+  });
+  expect(requests).toContain(`POST ${API}/pullzone/2/addHostname`);
+  expect(requests).not.toContain(ACCOUNT_LIST);
 });

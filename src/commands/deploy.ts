@@ -274,6 +274,7 @@ async function applySettings(
 ) {
   log.status("Applying settings");
   await api(apiKey, {
+    action: "apply the storage zone settings",
     method: "POST",
     path: `/storagezone/${zone.Id}`,
     body: {
@@ -283,6 +284,7 @@ async function applySettings(
     },
   });
   await api(apiKey, {
+    action: "apply the pull zone settings",
     method: "POST",
     path: `/pullzone/${config.pullZoneId}`,
     // bunny.net shares one cache across hostnames and caches the headers edge rules set, so
