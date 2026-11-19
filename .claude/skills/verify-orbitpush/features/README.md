@@ -35,4 +35,4 @@ Each feature file has an H1, a one-paragraph description, and these H2s in order
 - [Domains](./domains.md): `domains add`, `remove` and `list`, including the DNS wait, `--primary` and the refusals.
 - [Migrate from Netlify](./migrate-netlify.md): `migrate-netlify` copies `netlify.toml`, `_redirects` and `_headers` into `orbitpush.json`, offline only, no bunny.net request.
 - [Availability](./availability.md): `disable`, `enable` and `destroy`, each run twice to show they converge.
-- [CLI basics](./cli-basics.md): help, version, unknown commands, missing key or config, and exit codes.
+- [CLI basics](./cli-basics.md): help, version, unknown commands, missing key or config, bunny.net error messages and `ORBITPUSH_DEBUG`, and exit codes.

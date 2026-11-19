@@ -16,7 +16,7 @@
 ## How to get to it (user POV)
 
 - Run `orbitpush init` in a terminal and answer the prompts.
-- Run `orbitpush init --name <n> --dir <d> [--region <code>] [--replication-region <code>]... [--delivery-region <zone>]... --yes` in CI or a script. Every prompt has a flag, except the API key prompt, which appears only in a terminal without `BUNNY_API_KEY`.
+- Run `orbitpush init --name <n> --dir <d> [--region <code>] [--replication-region <code>]... [--delivery-region <zone>]... --yes` in CI or a script. Every prompt has a flag, except the API key prompt, which appears only in a terminal without `BUNNY_API_KEY` and without `--yes`; with `--yes` a missing key exits `1` with `BUNNY_API_KEY is not set`.
 - Run `orbitpush init` without a TTY or with `CI` set to anything but `false` or `0`: prompts are skipped. It then needs `--name` and `--dir`, or `--yes` for the defaults, and `BUNNY_API_KEY`.
 
 ## Driving it with ctl.sh
