@@ -10,6 +10,7 @@ The command surface every user and CI script relies on: help and version on stdo
 - `cli-no-key` stops with a link to the API key page when `BUNNY_API_KEY` is missing.
 - `cli-no-config` tells the user to run init when `orbitpush.json` is missing, naming `orbitpush init --name <name> --dir <dir> --yes` for use without a terminal. A missing key is reported before a missing config.
 - `cli-bad-config` rejects an `orbitpush.json` with an unknown key (`Unrecognized key: "x"`) before any request; `features/settings.md` covers invalid values.
+- `cli-bunny-error` prints a failed bunny.net request as `Could not <action>: bunny.net says "<Message>"`; with `ORBITPUSH_DEBUG=1` (only `1`) it appends `(<METHOD> <path>, HTTP <status>)`.
 - `cli-cancel` exits `130` when a prompt is cancelled with Ctrl-C.
 - `cli-bad-flag` rejects a single-value flag given twice, and an option no command knows (`--domian`), with exit `1`.
 - `cli-colors` writes no color codes when stderr is redirected away from the terminal, even while stdout is one.
@@ -31,6 +32,8 @@ Preconditions:
 - **No config.** Run `$C cli $RUN no-config -- deploy`. Exit `1`, stderr ``orbitpush.json not found. Run `orbitpush init` first, or `orbitpush init --name <name> --dir <dir> --yes` without a terminal.``
 - **No key.** Run `$C cli $RUN no-key BUNNY_API_KEY= -- deploy`. Exit `1`, and stderr names `BUNNY_API_KEY` and `https://dash.bunny.net/account/api-key`.
 - **Bad flag.** Run `$C cli $RUN bad-flag -- init --name verify-x --region DE --region NY --yes`. Exit `1`, stderr `✖ Invalid arguments: --region: Invalid input: expected string, received array`. Run `$C cli $RUN bad-opt -- deploy --domian x.com`. Exit `1`, stderr ``✖ Unknown option --domian. Run `orbitpush --help` for the options.``. No `bunny-state.json` is written by either.
+- **Bad config.** After `$C cli $RUN init -- init --name verify-x --dir public --yes`, add `"x": 1` to `orbitpush.json` and run `$C cli $RUN bad-config -- deploy`. Exit `1`, stderr `✖ Invalid orbitpush.json:` then `  Unrecognized key: "x"`, and the `requests` length in `bunny-state.json` is unchanged. Remove the key again.
+- **bunny.net error.** Run `$C cli $RUN pf FAKE_BUNNY_FAIL="POST /pullzone/1001/purgeCache" -- deploy`. Exit `1`, stderr `✖ Could not purge the cache: bunny.net says "fake-bunny: injected failure"` with no method or status. With `ORBITPUSH_DEBUG=1` before `--` it ends with ` (POST /pullzone/1001/purgeCache, HTTP 500)`; with `ORBITPUSH_DEBUG=true` it has no suffix.
 - **Colors.** Run `$C tui $RUN colors TUI_STDERR=file -- deploy --domian x`, which keeps stdout on the terminal and writes stderr to `colors.stderr`. When the screen shows `[orbitpush exited 1]`, `grep -cF "$(printf '\033')" .verify-artifacts/$RUN/colors.stderr` prints `0`. The same command without `TUI_STDERR=file` shows colors in `tmux capture-pane -e`.
 - **Cancel.** Run `$C tui $RUN cancel -- init`, wait for the first prompt, then `$C keys $RUN C-c`. The screen ends with `[orbitpush exited 130]`, and no `bunny-state.json` was written (no request was sent).
 
