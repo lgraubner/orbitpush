@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Resolver } from "node:dns/promises";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -323,7 +324,7 @@ test("deploy names the b-cdn.net URL until the domain has a certificate", async 
     certificateFails: true,
   });
 
-  const url = await deploy("key", { ...config(dir), domain: "www.example.com" });
+  const { url } = await deploy("key", { ...config(dir), domain: "www.example.com" });
 
   const output = stripVTControlCharacters(stderr.mock.calls.join(""));
   expect(output).toContain(`Deploying ${dir} to https://site-cdn.b-cdn.net`);
@@ -338,7 +339,7 @@ test("deploy returns the domain URL once it gets the domain a certificate", asyn
     hostnames: [{ Value: "www.example.com", HasCertificate: false, ForceSSL: false }],
   });
 
-  const url = await deploy("key", { ...config(dir), domain: "www.example.com" });
+  const { url } = await deploy("key", { ...config(dir), domain: "www.example.com" });
 
   expect(url).toBe("https://www.example.com");
 });
@@ -606,6 +607,25 @@ test("deploy adds a new domain, requests its certificate and forces SSL", async 
   });
 });
 
+test("deploy requests a new domain's certificate from bunny.net without looking up its DNS", async () => {
+  const dir = await outputDir();
+  const lookups = (["resolveCname", "resolve4", "resolve6", "resolveAny"] as const).map((method) =>
+    vi
+      .spyOn(Resolver.prototype, method)
+      .mockRejectedValue(Object.assign(new Error("no record"), { code: "ENODATA" })),
+  );
+  const { requests } = fakeBunny({
+    hostnames: [{ Value: "site.b-cdn.net", HasCertificate: true, ForceSSL: false }],
+  });
+
+  await deploy("key", { ...config(dir), domain: "www.example.com", aliases: ["example.com"] });
+
+  expect(requests).toContain(
+    "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=www.example.com",
+  );
+  for (const lookup of lookups) expect(lookup).not.toHaveBeenCalled();
+});
+
 test("deploy names the pull zone in the account that already has a domain", async () => {
   const dir = await outputDir();
   vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -630,67 +650,54 @@ test("deploy names the pull zone in the account that already has a domain", asyn
   );
 });
 
-test("deploy prints the DNS record for each hostname it adds to the pull zone", async () => {
+test("deploy adds each hostname of orbitpush.json and prints no DNS record for them", async () => {
   const dir = await outputDir();
   const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-  fakeBunny({
+  const { writes } = fakeBunny({
     hostnames: [
       { Value: "site.b-cdn.net", HasCertificate: true, ForceSSL: true },
       { Value: "www.example.com", HasCertificate: true, ForceSSL: true },
     ],
   });
 
-  await deploy("key", {
+  const { domainWarnings } = await deploy("key", {
     ...config(dir),
     domain: "www.example.com",
     aliases: ["example.com", "old.example.com"],
   });
 
-  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
-  expect(output).toMatch(/[^.]example\.com CNAME site\.b-cdn\.net/);
-  expect(output).toContain("old.example.com CNAME site.b-cdn.net");
-  expect(output).toContain(
-    "! Add this DNS record, then run `orbitpush domains add old.example.com` to finish:\n  old.example.com CNAME site.b-cdn.net",
-  );
-  expect(output).not.toContain("www.example.com CNAME");
+  expect(writes.filter((w) => w.endsWith("/addHostname"))).toHaveLength(2);
+  expect(domainWarnings).toEqual([]);
+  expect(stripVTControlCharacters(stderr.mock.calls.join(""))).not.toContain("CNAME");
 });
 
-test("deploy gives one DNS instruction for a hostname it adds before DNS points to it", async () => {
+test("deploy returns one DNS warning for a hostname it adds before DNS points to it", async () => {
   const dir = await outputDir();
   const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
   const { requests } = fakeBunny({ certificateFails: true });
 
-  await deploy("key", { ...config(dir), domain: "www.example.com" });
+  const { domainWarnings } = await deploy("key", { ...config(dir), domain: "www.example.com" });
 
   expect(domainRequests(requests)).toEqual([
     "POST https://api.bunny.net/pullzone/2/addHostname",
     "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=www.example.com",
   ]);
-  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
-  expect(output).toContain("www.example.com CNAME site.b-cdn.net");
-  expect(
-    output.split(
-      "Add this DNS record, then run `orbitpush domains add www.example.com` to finish:",
-    ),
-  ).toHaveLength(2);
-  expect(output).not.toContain("DNS for www.example.com does not point to bunny.net yet");
-  expect(output).not.toContain("No SSL certificate");
+  expect(domainWarnings).toEqual([
+    "www.example.com is not connected: its DNS does not point to bunny.net yet. Run `orbitpush domains add www.example.com` to see the record it needs.",
+  ]);
+  expect(stripVTControlCharacters(stderr.mock.calls.join(""))).not.toContain("CNAME");
 });
 
-test("deploy gives no certificate warning for a hostname it just added when the certificate fails for another reason", async () => {
+test("deploy returns bunny.net's reason for a hostname it just added when the certificate fails for another reason", async () => {
   const dir = await outputDir();
-  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-  const { requests } = fakeBunny({ certificateFails: "CAA record forbids issuance" });
+  vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny({ certificateFails: "CAA record forbids issuance" });
 
-  await deploy("key", { ...config(dir), domain: "www.example.com" });
+  const { domainWarnings } = await deploy("key", { ...config(dir), domain: "www.example.com" });
 
-  expect(domainRequests(requests)).toEqual([
-    "POST https://api.bunny.net/pullzone/2/addHostname",
-    "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=www.example.com",
+  expect(domainWarnings).toEqual([
+    expect.stringMatching(/^No SSL certificate for www\.example\.com yet\. bunny\.net: .*CAA/),
   ]);
-  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
-  expect(output).toContain("www.example.com CNAME site.b-cdn.net");
-  expect(output).not.toContain("No SSL certificate for www.example.com");
 });
 
 test("deploy forces SSL on a domain that has a certificate without requesting another", async () => {
@@ -710,21 +717,21 @@ test("deploy forces SSL on a domain that has a certificate without requesting an
 
 test("deploy warns and skips Force SSL when the certificate cannot be obtained", async () => {
   const dir = await outputDir();
-  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  vi.spyOn(process.stderr, "write").mockReturnValue(true);
   const { requests, writes } = fakeBunny({
     hostnames: [{ Value: "www.example.com", HasCertificate: false, ForceSSL: false }],
     certificateFails: true,
   });
 
-  await deploy("key", { ...config(dir), domain: "www.example.com" });
+  const { domainWarnings } = await deploy("key", { ...config(dir), domain: "www.example.com" });
 
   expect(domainRequests(requests)).toEqual([
     "GET https://api.bunny.net/pullzone/loadFreeCertificate?hostname=www.example.com",
   ]);
   expect(writes).toContain("POST https://api.bunny.net/pullzone/2/purgeCache");
-  expect(stderr.mock.calls.join("")).toContain(
-    "DNS for www.example.com does not point to bunny.net",
-  );
+  expect(domainWarnings).toEqual([
+    "www.example.com is not connected: its DNS does not point to bunny.net yet. Run `orbitpush domains add www.example.com` to see the record it needs.",
+  ]);
 });
 
 test.each([
@@ -739,13 +746,12 @@ test.each([
     pullZoneName: "site-cdn",
   });
 
-  await deploy("key", { ...config(dir), domain: "www.example.com" });
+  const { domainWarnings } = await deploy("key", { ...config(dir), domain: "www.example.com" });
 
   const output = stripVTControlCharacters(stderr.mock.calls.join(""));
-  expect(output).toContain(
-    "! DNS for www.example.com does not point to bunny.net yet. Add this record, then run `orbitpush domains add www.example.com`:",
-  );
-  expect(output).toContain("www.example.com CNAME site-cdn.b-cdn.net");
+  expect(domainWarnings).toEqual([
+    "www.example.com is not connected: its DNS does not point to bunny.net yet. Run `orbitpush domains add www.example.com` to see the record it needs.",
+  ]);
   expect(output).not.toContain("HTTP 400");
   expect(output).not.toContain("loadFreeCertificate");
   expect(requests.some((r) => r.includes("setForceSSL"))).toBe(false);
@@ -760,13 +766,14 @@ test("deploy passes on bunny.net's reason for any other certificate failure", as
     pullZoneName: "site-cdn",
   });
 
-  await deploy("key", { ...config(dir), domain: "www.example.com" });
+  const { domainWarnings } = await deploy("key", { ...config(dir), domain: "www.example.com" });
 
-  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
-  expect(output).toMatch(
-    /! No SSL certificate for www\.example\.com yet\. bunny\.net: .*CAA record forbids issuance/,
-  );
-  expect(output).not.toContain("CNAME");
+  expect(domainWarnings).toEqual([
+    expect.stringMatching(
+      /^No SSL certificate for www\.example\.com yet\. bunny\.net: .*CAA record forbids issuance/,
+    ),
+  ]);
+  expect(stripVTControlCharacters(stderr.mock.calls.join(""))).not.toContain("CNAME");
 });
 
 test("deploy leaves a domain with certificate and Force SSL alone, matching case-insensitively", async () => {
@@ -1472,11 +1479,10 @@ test("deploy gives no alias warning for a domain without a certificate when ther
     certificateFails: true,
   });
 
-  await deploy("key", { ...config(dir), domain: "example.com" });
+  const { domainWarnings } = await deploy("key", { ...config(dir), domain: "example.com" });
 
-  const output = stderr.mock.calls.join("");
-  expect(output).toContain("does not point to bunny.net");
-  expect(output).not.toContain("will redirect to");
+  expect(domainWarnings.join("")).toContain("does not point to bunny.net");
+  expect(stderr.mock.calls.join("")).not.toContain("will redirect to");
 });
 
 const deployed = {

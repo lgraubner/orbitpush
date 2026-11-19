@@ -42,6 +42,10 @@ _Avoid_: secondary domain, redirect domain
 Said of a hostname on the pull zone that has an SSL certificate, so it serves the site over HTTPS. A hostname whose DNS does not point to bunny.net yet is on the pull zone but not connected.
 _Avoid_: active, verified
 
+**DNS record**:
+The record a hostname needs at its DNS provider: a CNAME to `<name>.b-cdn.net`, or ALIAS, ANAME or CNAME flattening at the root of a domain. `domains add` looks it up itself and reports one of three states: it **matches** when the hostname's CNAME chain reaches `<name>.b-cdn.net` (or, without a CNAME, its addresses are those of `<name>.b-cdn.net`), it **points elsewhere**, such as to another pull zone, or it is **missing**. A record can point elsewhere while the hostname is connected, because bunny.net issues the certificate for any record that reaches bunny.net.
+_Avoid_: DNS target, DNS entry
+
 **Disabled site**:
 A pull zone with the edge rule `orbitpush disabled`, which blocks every request. `disable` adds it, `enable` removes it, and `deploy` leaves it in place. The rule on the pull zone is the only record of the state.
 _Avoid_: paused, suspended

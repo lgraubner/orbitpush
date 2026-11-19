@@ -1,3 +1,4 @@
+import { Resolver } from "node:dns/promises";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -74,6 +75,10 @@ function fakeBunny({
   addHostnameError,
   account = [],
   hasMoreItems = false,
+  records = {},
+  addresses = {},
+  dnsError,
+  certificateFromCheck = 1,
 }: {
   hostnames?: Hostname[];
   edgeRules?: Rule[];
@@ -84,13 +89,51 @@ function fakeBunny({
   addHostnameError?: { status: number; body: unknown };
   account?: AccountPullZone[];
   hasMoreItems?: boolean;
+  records?: Record<string, string | (string | undefined)[]>;
+  addresses?: Record<string, string[]>;
+  dnsError?: string;
+  certificateFromCheck?: number;
 } = {}) {
   const zone = { hostnames: [...hostnames], rules: [...edgeRules] };
   const requests: string[] = [];
   const writes: string[] = [];
   const bodies: Record<string, unknown[]> = {};
   const certificateChecks: number[] = [];
+  const checks: number[] = [];
   let guid = 0;
+
+  const noRecord = () => Object.assign(new Error("no record"), { code: "ENODATA" });
+  const certified = new Set(hostnames.filter((h) => h.HasCertificate).map((h) => h.Value));
+  const pointed = (host: string) =>
+    dns.has(host) || certified.has(host) || checks.length >= dnsFromCheck;
+  const record = (host: string) => {
+    const value = records[host];
+    if (!Array.isArray(value)) return value;
+    return value[Math.min(Math.max(checks.length - 1, 0), value.length - 1)];
+  };
+  const target = (host: string) =>
+    host in records ? record(host) : pointed(host) ? "site.b-cdn.net" : undefined;
+  vi.spyOn(Resolver.prototype, "resolveCname").mockImplementation(async (name: string) => {
+    if (name.endsWith(".b-cdn.net")) throw noRecord();
+    checks.push(Date.now());
+    if (dnsError) throw Object.assign(new Error(dnsError), { code: dnsError });
+    const cname = target(name);
+    if (cname) return [cname];
+    throw noRecord();
+  });
+  vi.spyOn(Resolver.prototype, "resolve4").mockImplementation(async (name: string) => {
+    if (name.endsWith(".b-cdn.net")) return ["192.0.2.1"];
+    if (addresses[name]) return addresses[name];
+    throw noRecord();
+  });
+  const bunnyAgrees = (host: string) =>
+    certificateChecks.length >= certificateFromCheck &&
+    (Boolean((target(target(host) ?? "") ?? target(host))?.endsWith(".b-cdn.net")) ||
+      Boolean(addresses[host]?.includes("192.0.2.1")) ||
+      pointed(host));
+  vi.spyOn(Resolver.prototype, "resolve6").mockImplementation(async () => {
+    throw noRecord();
+  });
 
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init = {}) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -128,7 +171,7 @@ function fakeBunny({
       const host = new URL(url).searchParams.get("hostname") ?? "";
       certificateChecks.push(Date.now());
       if (certificateError) return json({ Message: certificateError }, 400);
-      if (!dns.has(host) && certificateChecks.length < dnsFromCheck) {
+      if (!bunnyAgrees(host)) {
         return json({ Message: `The domain ${host} is not pointing to our servers.` }, 400);
       }
       const entry = zone.hostnames.find((h) => h.Value === host);
@@ -160,7 +203,7 @@ function fakeBunny({
 
   const ruleWrites = () => (bodies[`POST ${API}/pullzone/2/edgerules/addOrUpdate`] ?? []) as Rule[];
 
-  return { zone, requests, writes, bodies, certificateChecks, ruleWrites };
+  return { zone, requests, writes, bodies, certificateChecks, checks, ruleWrites };
 }
 
 async function settleWithFakeTimers<T>(promise: Promise<T>) {
@@ -292,38 +335,41 @@ test("add refuses one alias too many without sending a write or changing orbitpu
 
 test("add without a terminal prints the DNS record, checks once and fails, keeping the domain in orbitpush.json", async () => {
   const config = await site();
-  const { writes, certificateChecks } = fakeBunny();
+  const { writes, checks } = fakeBunny();
 
   const error = await domains("key", config, ["add", "example.com"], options).catch(
     (e: unknown) => e,
   );
 
-  expect(String(error)).toContain("is not connected yet");
+  expect(String(error)).toContain("is not set up yet");
   expect(String(error)).toContain("orbitpush domains add example.com");
   expect(String(error)).toContain("again in a few minutes");
-  expect(certificateChecks).toHaveLength(1);
+  expect(checks).toHaveLength(1);
   expect(writes).toEqual([`POST ${API}/pullzone/2/addHostname`]);
   expect(await readConfig()).toMatchObject({ domain: "example.com" });
-  expect(output()).toContain("! Add this DNS record at your DNS provider:");
-  expect(output()).toContain("example.com CNAME site.b-cdn.net");
+  expect(output()).toContain("! Set this DNS record for example.com at your DNS provider:");
+  expect(output()).toMatch(
+    /expected {2}CNAME site\.b-cdn\.net\s+current {3}none {3}add this record/,
+  );
   expect(output()).toMatch(/ALIAS|ANAME|CNAME flattening/);
 });
 
 test("add in a terminal rechecks DNS every 10 seconds and connects on success", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   const config = await site();
-  const { certificateChecks, writes, requests } = fakeBunny({ dnsFromCheck: 6 });
+  const { checks, writes, requests } = fakeBunny({ dnsFromCheck: 6 });
 
   const done = domains("key", config, ["add", "www.example.com"], { interactive: true });
   await settleWithFakeTimers(done);
 
-  const seconds = certificateChecks.map((t) => (t - certificateChecks[0]) / 1000);
+  const seconds = checks.map((t) => (t - checks[0]) / 1000);
   expect(seconds).toEqual([0, 10, 20, 30, 40, 50]);
   expect(requests.indexOf(`POST ${API}/pullzone/2/setForceSSL`)).toBeGreaterThan(
     requests.lastIndexOf(`GET ${API}/pullzone/loadFreeCertificate?hostname=www.example.com`),
   );
   expect(writes).toContain(`POST ${API}/pullzone/2/purgeCache`);
-  expect(output()).toContain("www.example.com CNAME site.b-cdn.net");
+  expect(output()).toContain("expected  CNAME site.b-cdn.net");
+  expect(output()).toContain("current   CNAME site.b-cdn.net   ✔");
   expect(output()).not.toMatch(/ALIAS|ANAME|flattening/);
   expect(output()).toContain("✔ www.example.com is connected: https://www.example.com");
 });
@@ -331,18 +377,18 @@ test("add in a terminal rechecks DNS every 10 seconds and connects on success", 
 test("add in a terminal gives up after 15 minutes", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   const config = await site();
-  const { certificateChecks, writes } = fakeBunny();
+  const { checks, writes } = fakeBunny();
 
   const error = await settleWithFakeTimers(
     domains("key", config, ["add", "www.example.com"], { interactive: true }).catch(
       (e: unknown) => e,
     ),
   );
-  const failedAfter = (Date.now() - certificateChecks[0]) / 1000;
+  const failedAfter = (Date.now() - checks[0]) / 1000;
 
-  expect(String(error)).toContain("is not connected yet");
+  expect(String(error)).toContain("is not set up yet");
   expect(String(error)).toContain("orbitpush domains add www.example.com");
-  const seconds = certificateChecks.map((t) => (t - certificateChecks[0]) / 1000);
+  const seconds = checks.map((t) => (t - checks[0]) / 1000);
   expect(seconds.slice(0, 4)).toEqual([0, 10, 20, 30]);
   expect(seconds.at(-1)).toBeGreaterThanOrEqual(14 * 60);
   expect(failedAfter).toBeLessThanOrEqual(15 * 60);
@@ -352,7 +398,10 @@ test("add in a terminal gives up after 15 minutes", async () => {
 test("add fails at once with bunny.net's message when the certificate fails for another reason", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   const config = await site();
-  const { certificateChecks } = fakeBunny({ certificateError: "Rate limit exceeded for example" });
+  const { certificateChecks } = fakeBunny({
+    dns: new Set(["www.example.com"]),
+    certificateError: "Rate limit exceeded for example",
+  });
 
   const error = await settleWithFakeTimers(
     domains("key", config, ["add", "www.example.com"], { interactive: true }).catch(
@@ -428,7 +477,7 @@ test("add --primary without a primary domain makes the hostname the domain even 
     interactive: false,
   }).catch((e: unknown) => e);
 
-  expect(String(error)).toContain("www.example.com is not connected yet");
+  expect(String(error)).toContain("www.example.com is not set up yet");
   expect(String(error)).not.toContain("alias");
   expect(await readConfig()).toMatchObject({ domain: "www.example.com", aliases: [] });
 });
@@ -669,19 +718,19 @@ test("list with an extra argument prints the usage", async () => {
 test("Ctrl+C during the DNS wait stops it, sends no further check and removes its listener", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   const config = await site();
-  const { certificateChecks } = fakeBunny();
+  const { checks } = fakeBunny();
   const listeners = process.listenerCount("SIGINT");
 
   const done = domains("key", config, ["add", "www.example.com"], { interactive: true }).catch(
     (e: unknown) => e,
   );
-  while (certificateChecks.length < 2) {
+  while (checks.length < 2) {
     await new Promise((resolve) => setImmediate(resolve));
     await vi.advanceTimersByTimeAsync(1000);
   }
   expect(process.listenerCount("SIGINT")).toBeGreaterThan(listeners);
   process.emit("SIGINT");
-  const checksAtSignal = certificateChecks.length;
+  const checksAtSignal = checks.length;
   const error = await settleWithFakeTimers(done);
   await vi.advanceTimersByTimeAsync(20 * 60 * 1000);
 
@@ -690,18 +739,18 @@ test("Ctrl+C during the DNS wait stops it, sends no further check and removes it
     message:
       "Stopped waiting. Run `orbitpush domains add www.example.com` again once the record is set.",
   });
-  expect(certificateChecks).toHaveLength(checksAtSignal);
+  expect(checks).toHaveLength(checksAtSignal);
   expect(process.listenerCount("SIGINT")).toBe(listeners);
 });
 
 test("the DNS wait removes its Ctrl+C listener when it ends", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   const config = await site();
-  const { certificateChecks } = fakeBunny({ dnsFromCheck: 3 });
+  const { checks } = fakeBunny({ dnsFromCheck: 3 });
   const listeners = process.listenerCount("SIGINT");
 
   const done = domains("key", config, ["add", "www.example.com"], { interactive: true });
-  while (certificateChecks.length < 2) {
+  while (checks.length < 2) {
     await new Promise((resolve) => setImmediate(resolve));
     await vi.advanceTimersByTimeAsync(1000);
   }
@@ -718,13 +767,13 @@ test("the DNS wait status counts the checks so far, starting at 1 check", async 
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   process.stderr.isTTY = true;
   const config = await site();
-  const { certificateChecks } = fakeBunny({ dnsFromCheck: 4 });
+  const { checks } = fakeBunny({ dnsFromCheck: 4 });
 
   await settleWithFakeTimers(
     domains("key", config, ["add", "www.example.com"], { interactive: true }),
   );
 
-  expect(certificateChecks).toHaveLength(4);
+  expect(checks).toHaveLength(4);
   expect(output()).toMatch(/\b1 check so far\b/);
   expect(checkCounts()).toEqual([1, 2, 3]);
 });
@@ -733,12 +782,12 @@ test("the DNS wait status shows as many checks as have run when Ctrl+C stops it"
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   process.stderr.isTTY = true;
   const config = await site();
-  const { certificateChecks } = fakeBunny();
+  const { checks } = fakeBunny();
 
   const done = domains("key", config, ["add", "www.example.com"], { interactive: true }).catch(
     (e: unknown) => e,
   );
-  while (certificateChecks.length < 5) {
+  while (checks.length < 5) {
     await new Promise((resolve) => setImmediate(resolve));
     await vi.advanceTimersByTimeAsync(1000);
   }
@@ -992,4 +1041,168 @@ test("add with an empty error key quotes bunny.net's message and looks up no own
   });
   expect(requests).toContain(`POST ${API}/pullzone/2/addHostname`);
   expect(requests).not.toContain(ACCOUNT_LIST);
+});
+
+const FORCE_SSL = `POST ${API}/pullzone/2/setForceSSL`;
+const RULE_WRITE = `POST ${API}/pullzone/2/edgerules/addOrUpdate`;
+const count = (text: string) => output().split(text).length - 1;
+const interactive = { interactive: true };
+
+test("add without a terminal refuses a CNAME to another pull zone, though bunny.net would issue the certificate", async () => {
+  const config = await site();
+  const { writes, certificateChecks } = fakeBunny({
+    records: { "www.example.com": "other-site.b-cdn.net" },
+  });
+
+  const error = await domains("key", config, ["add", "www.example.com"], options).catch(
+    (e: unknown) => e,
+  );
+
+  expect(error).toBeInstanceOf(Error);
+  expect(writes).toEqual([`POST ${API}/pullzone/2/addHostname`]);
+  expect(writes).not.toContain(FORCE_SSL);
+  expect(writes).not.toContain(RULE_WRITE);
+  expect(certificateChecks).toEqual([]);
+  expect(output()).toContain("! Set this DNS record for www.example.com at your DNS provider:");
+  expect(output()).toContain("expected  CNAME site.b-cdn.net");
+  expect(output()).toContain("current   CNAME other-site.b-cdn.net   change this");
+  expect(output()).not.toMatch(/ALIAS|ANAME|flattening/);
+});
+
+test("add in a terminal never connects a CNAME to another pull zone and prints the record again when it gives up", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const config = await site();
+  const { writes, checks, certificateChecks } = fakeBunny({
+    records: { "www.example.com": "other-site.b-cdn.net" },
+  });
+
+  const error = await settleWithFakeTimers(
+    domains("key", config, ["add", "www.example.com"], interactive).catch((e: unknown) => e),
+  );
+
+  expect(error).toBeInstanceOf(Error);
+  expect(checks.length).toBeGreaterThan(1);
+  expect(certificateChecks).toEqual([]);
+  expect(writes).not.toContain(FORCE_SSL);
+  expect(writes).not.toContain(RULE_WRITE);
+  expect(count("expected  CNAME site.b-cdn.net")).toBe(2);
+  expect(count("current   CNAME other-site.b-cdn.net   change this")).toBe(2);
+});
+
+test("add of a connected hostname whose DNS points to another pull zone fails without a write", async () => {
+  const config = await site({ domain: "www.example.com" });
+  const { writes } = fakeBunny({
+    hostnames: [connected("www.example.com")],
+    edgeRules: deployedRules({ domain: "www.example.com", aliases: [] }),
+    records: { "www.example.com": "other-site.b-cdn.net" },
+  });
+
+  await expect(domains("key", config, ["add", "www.example.com"], options)).rejects.toThrow();
+
+  expect(writes).toEqual([]);
+});
+
+test("add of a root domain with addresses elsewhere shows them and the flattening hint, and requests no certificate", async () => {
+  const config = await site();
+  const { certificateChecks, writes } = fakeBunny({
+    addresses: { "example.com": ["203.0.113.5"] },
+  });
+
+  await expect(domains("key", config, ["add", "example.com"], options)).rejects.toThrow();
+
+  expect(certificateChecks).toEqual([]);
+  expect(writes).not.toContain(FORCE_SSL);
+  expect(output()).toContain("! Set this DNS record for example.com at your DNS provider:");
+  expect(output()).toContain("current   A 203.0.113.5   change this");
+  expect(output()).toMatch(/ALIAS|ANAME|CNAME flattening/);
+});
+
+test("add connects a root domain whose address is this pull zone's", async () => {
+  const config = await site();
+  const { certificateChecks, writes } = fakeBunny({
+    addresses: { "example.com": ["192.0.2.1"] },
+  });
+
+  await domains("key", config, ["add", "example.com"], options);
+
+  expect(certificateChecks).toHaveLength(1);
+  expect(writes).toContain(FORCE_SSL);
+  expect(output()).toContain("✔ The DNS record of example.com points to site.b-cdn.net");
+  expect(output()).toContain("current   A 192.0.2.1   ✔ (same address as site.b-cdn.net)");
+  expect(output()).not.toMatch(/ALIAS|ANAME|flattening/);
+});
+
+test("add connects a hostname whose CNAME chain reaches this pull zone and shows the chain", async () => {
+  const config = await site();
+  const { writes } = fakeBunny({
+    records: { "www.example.com": "proxy.example.net", "proxy.example.net": "site.b-cdn.net" },
+  });
+
+  await domains("key", config, ["add", "www.example.com"], options);
+
+  expect(writes).toContain(FORCE_SSL);
+  expect(output()).toContain("✔ The DNS record of www.example.com points to site.b-cdn.net");
+  expect(output()).toContain("current   CNAME proxy.example.net → site.b-cdn.net   ✔");
+});
+
+test("add falls back to bunny.net's check when the DNS lookup fails, and connects", async () => {
+  const config = await site();
+  const { certificateChecks, writes } = fakeBunny({
+    dnsError: "ETIMEOUT",
+    dns: new Set(["www.example.com"]),
+  });
+
+  await domains("key", config, ["add", "www.example.com"], options);
+
+  expect(certificateChecks).toHaveLength(1);
+  expect(writes).toContain(FORCE_SSL);
+  expect(output()).toContain(
+    "! Could not look up the DNS record of www.example.com. It needs this record:",
+  );
+  expect(output()).toContain("current   unknown (DNS lookup failed: ETIMEOUT)");
+});
+
+test("add in a terminal prints the current record only when it changes and requests the certificate once DNS matches", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const config = await site();
+  const { checks, certificateChecks, writes } = fakeBunny({
+    records: {
+      "www.example.com": [
+        undefined,
+        undefined,
+        "other-site.b-cdn.net",
+        "other-site.b-cdn.net",
+        "site.b-cdn.net",
+      ],
+    },
+  });
+
+  await settleWithFakeTimers(domains("key", config, ["add", "www.example.com"], interactive));
+
+  expect(checks).toHaveLength(5);
+  expect(certificateChecks).toHaveLength(1);
+  expect(certificateChecks[0]).toBeGreaterThanOrEqual(checks[4]);
+  expect(writes).toContain(FORCE_SSL);
+  expect(count("current   none   add this record")).toBe(1);
+  expect(count("current   CNAME other-site.b-cdn.net   change this")).toBe(1);
+  expect(count("current   CNAME site.b-cdn.net   ✔")).toBe(1);
+  expect(output()).toContain("✔ www.example.com is connected: https://www.example.com");
+});
+
+test("add in a terminal keeps waiting while DNS matches but bunny.net still says not pointing, then connects", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const config = await site();
+  const { certificateChecks, requests } = fakeBunny({
+    dns: new Set(["www.example.com"]),
+    certificateFromCheck: 3,
+  });
+
+  await settleWithFakeTimers(domains("key", config, ["add", "www.example.com"], interactive));
+
+  expect(certificateChecks).toHaveLength(3);
+  expect(requests.indexOf(FORCE_SSL)).toBeGreaterThan(
+    requests.lastIndexOf(`GET ${API}/pullzone/loadFreeCertificate?hostname=www.example.com`),
+  );
+  expect(count("current   CNAME site.b-cdn.net   ✔")).toBe(1);
+  expect(output()).toContain("✔ www.example.com is connected: https://www.example.com");
 });

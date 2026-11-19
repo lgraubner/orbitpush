@@ -25,6 +25,7 @@ src/
   cli.ts                  the entry: help, flag parsing, dispatch, exit codes
   commands/<command>.ts   one file per command, exporting the command function; follow deploy.ts
   bunny.ts                all bunny.net HTTP, its response schemas, and steps several commands share
+  dns.ts                  DNS lookups of a hostname's record, through public resolvers
   config.ts               orbitpush.json: schema, read, write
   rules.ts                redirects and headers from orbitpush.json to edge rules
   args.ts                 CLI flags
@@ -64,6 +65,7 @@ Untrusted data is parsed once, where it enters, into a named domain type:
 | `orbitpush.json`                         | `ConfigSchema` in `readConfig()` in `src/config.ts`, then `redirectRules()` and `headerRules()` in `src/rules.ts` for what bunny.net can serve |
 | `netlify.toml`, `_redirects`, `_headers` | `parseNetlifyToml()`, `parseRedirectsFile()` and `parseHeadersFile()` in `src/commands/migrate-netlify.ts`, only for `migrate-netlify`         |
 | bunny.net API responses                  | the zod schemas in `src/bunny.ts`, through `apiJson()`, `storage().list()` and `storage().read()`, which reads the stale record                |
+| DNS answers                              | `lookUpDnsRecord()` in `src/dns.ts`, into a `DnsRecord`                                                                                        |
 
 - Hand the parsed value on, not the raw input. Code behind the boundary takes the domain type and does not validate again. `parseArgs()` parses the `mri` output, which is typed as `any`, so no flag reaches `init` unchecked.
 - Expose domain types across a boundary, not the transport, storage, or wire types behind it.

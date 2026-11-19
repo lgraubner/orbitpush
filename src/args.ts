@@ -12,15 +12,13 @@ const Argv = z.object({
   name: z.optional(z.string()),
   dir: z.optional(z.string()),
   region: z.optional(z.string()),
-  domain: z.optional(z.string()),
-  alias: z.optional(z.union([z.string(), z.array(z.string())])),
   "replication-region": z.optional(z.union([z.string(), z.array(z.string())])),
   "delivery-region": z.optional(z.union([z.string(), z.array(z.string())])),
 });
 
 const OPTIONS = {
   boolean: ["help", "version", "yes", "prune-hostnames", "primary"],
-  string: ["name", "dir", "domain", "alias", "region", "replication-region", "delivery-region"],
+  string: ["name", "dir", "region", "replication-region", "delivery-region"],
   alias: { h: "help", v: "version", y: "yes" },
 };
 const KNOWN = new Set(["_", ...OPTIONS.boolean, ...OPTIONS.string, ...Object.keys(OPTIONS.alias)]);

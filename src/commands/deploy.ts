@@ -86,7 +86,11 @@ export async function deploy(
     upload,
   );
 
-  const { url, connected } = await applySettings(apiKey, {
+  const {
+    url,
+    connected,
+    warnings: domainWarnings,
+  } = await applySettings(apiKey, {
     config,
     zone,
     pullZone,
@@ -134,7 +138,7 @@ export async function deploy(
     ["kept", ruleChanges.kept],
   ]);
 
-  return url;
+  return { url, domainWarnings };
 }
 
 function logChanges(subject: string, counts: [string, number][]) {

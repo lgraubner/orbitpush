@@ -177,20 +177,6 @@ test("init refuses to run when orbitpush.json exists and sends nothing to bunny.
   expect(await readFile("orbitpush.json", "utf8")).toBe("keep me");
 });
 
-test("init writes the domain and its aliases and adds them all to the pull zone", async () => {
-  const { writes, bodies } = fakeBunny();
-
-  await init({ name: "site", domain: "www.example.com", alias: ["example.com"], yes: true }, false);
-
-  const written: unknown = JSON.parse(await readFile("orbitpush.json", "utf8"));
-  expect(written).toMatchObject({ domain: "www.example.com", aliases: ["example.com"] });
-  const added = writes.filter((w) => w.endsWith("/addHostname"));
-  expect(added).toHaveLength(2);
-  expect(bodies["POST https://api.bunny.net/pullzone/2/addHostname"]).toEqual({
-    Hostname: "example.com",
-  });
-});
-
 test("init writes no domain key without a custom domain", async () => {
   fakeBunny();
 
@@ -202,20 +188,6 @@ test("init writes no domain key without a custom domain", async () => {
 });
 
 test.each([
-  ["without a domain", { alias: ["example.com"] }],
-  ["that repeats the domain", { domain: "www.example.com", alias: ["WWW.example.com"] }],
-  [
-    "beyond the 8 that fit next to b-cdn.net and the domain in bunny.net's 10 hostnames",
-    { domain: "www.example.com", alias: Array.from({ length: 9 }, (_, i) => `a${i}.example.com`) },
-  ],
-])("init rejects an alias %s before sending anything to bunny.net", async (_, flags) => {
-  const { writes } = fakeBunny();
-
-  await expect(init({ name: "site", yes: true, ...flags }, false)).rejects.toThrow(/alias/i);
-  expect(writes).toEqual([]);
-});
-
-test.each([
   ["with a space", "my site"],
   ["with a dot", "my.site"],
   ["that is empty", ""],
@@ -223,17 +195,6 @@ test.each([
   const { writes } = fakeBunny();
 
   await expect(init({ name, yes: true }, false)).rejects.toThrow(/name/i);
-  expect(writes).toEqual([]);
-});
-
-test.each([
-  ["a domain with a scheme", { domain: "https://www.example.com" }],
-  ["a domain with a path", { domain: "www.example.com/" }],
-  ["an alias with a port", { domain: "www.example.com", alias: ["example.com:8080"] }],
-])("init rejects %s before sending anything to bunny.net", async (_, flags) => {
-  const { writes } = fakeBunny();
-
-  await expect(init({ name: "site", yes: true, ...flags }, false)).rejects.toThrow(/hostname/);
   expect(writes).toEqual([]);
 });
 
@@ -322,26 +283,12 @@ test("init in a terminal asks no domain or alias question", async () => {
   ]);
 });
 
-test("init in a terminal still takes --domain and --alias", async () => {
-  const { writes } = fakeBunny();
-  vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-  await init({ domain: "www.example.com", alias: "example.com" }, true);
-
-  expect(writes.filter((w) => w.endsWith("/addHostname"))).toHaveLength(2);
-});
-
-test.each([
-  [{}, "2. Use your own domain: `npx orbitpush domains add www.example.com`"],
-  [
-    { domain: "www.example.com" },
-    "2. Add the DNS records above, then run `npx orbitpush domains add www.example.com`",
-  ],
-])("init with %o prints the next steps", async (flags, second) => {
+test("init prints the next steps", async () => {
+  const second = "2. Use your own domain: `npx orbitpush domains add www.example.com`";
   fakeBunny();
   const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
-  await init({ name: "site", dir: "dist", ...flags }, false);
+  await init({ name: "site", dir: "dist" }, false);
 
   const output = stripVTControlCharacters(stderr.mock.calls.join(""));
   const next = output.indexOf("Next:");
@@ -349,32 +296,6 @@ test.each([
   expect(next).toBeGreaterThan(-1);
   expect(first).toBeGreaterThan(next);
   expect(output.indexOf(second)).toBeGreaterThan(first);
-});
-
-test.each([
-  ["an invalid --domain", { domain: "https://www.example.com" }, /hostname/],
-  ["an --alias without --domain", { alias: "example.com" }, /alias/i],
-])("init without a terminal or --yes rejects %s", async (_, flags, message) => {
-  const { writes } = fakeBunny();
-
-  await expect(init({ name: "site", dir: "dist", ...flags }, false)).rejects.toThrow(message);
-  expect(writes).toEqual([]);
-});
-
-test("init prints the DNS record for each hostname it adds, with the command that finishes it", async () => {
-  fakeBunny();
-  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-
-  await init({ name: "site", dir: "dist", domain: "www.example.com", alias: "example.com" }, false);
-
-  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
-  for (const host of ["www.example.com", "example.com"]) {
-    expect(output).toMatch(
-      new RegExp(
-        `! Add this DNS record, then run \`orbitpush domains add ${host.replaceAll(".", "\\.")}\` to finish:\\s+${host.replaceAll(".", "\\.")} CNAME site\\.b-cdn\\.net`,
-      ),
-    );
-  }
 });
 
 test("init tells the user to delete a zone in the dashboard when its cleanup fails", async () => {

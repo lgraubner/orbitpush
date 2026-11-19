@@ -5,14 +5,15 @@ import {
   connectHostname,
   findHostname,
   getPullZone,
+  type Connection,
   isConnected,
-  logDnsRecord,
   purgeCache,
   type PullZone,
   removeHostname,
   syncRules,
 } from "@/bunny.ts";
 import { aliasProblem, type Config, CONFIG_FILE, hostnameProblem, writeConfig } from "@/config.ts";
+import { type DnsRecord, type DnsValue, lookUpDnsRecord } from "@/dns.ts";
 import { count, log } from "@/log.ts";
 import { managedRules } from "@/rules.ts";
 
@@ -72,17 +73,22 @@ async function addDomain(apiKey: string, config: Config, host: string, options: 
   await writeConfig(config, { overwrite: true });
 
   const retry = `orbitpush domains add ${host}${options.primary ? " --primary" : ""}`;
-  const connection = await waitForConnection(apiKey, config.pullZoneId, host, hostname, {
-    cdnHost,
-    interactive: options.interactive,
-    retry,
-  });
+  const { connection, record, checks } = await waitForConnection(
+    apiKey,
+    config.pullZoneId,
+    host,
+    hostname,
+    { cdnHost, interactive: options.interactive, retry },
+  );
   if (connection.status !== "connected") {
     const stays = swapsPrimary ? " It stays an alias for now." : "";
+    if (connection.status === "failed") {
+      throw new Error(`${host} has no SSL certificate.${stays} bunny.net: ${connection.reason}`);
+    }
+
+    if (checks > 1) logRecordLines(cdnHost, record);
     throw new Error(
-      connection.status === "dns"
-        ? `${host} is not connected yet: its DNS does not point to ${cdnHost}.${stays} Run \`${retry}\` again in a few minutes, once the record is set. If the domain uses a proxy such as Cloudflare's, turn it off for this record.`
-        : `${host} has no SSL certificate.${stays} bunny.net: ${connection.reason}`,
+      `${host} is not set up yet: ${dnsProblem(record, cdnHost)}.${stays} Run \`${retry}\` again in a few minutes, once the record is set. If the domain uses a proxy such as Cloudflare's, turn it off for this record.`,
     );
   }
 
@@ -196,11 +202,21 @@ async function waitForConnection(
   hostname: PullZone["Hostnames"][number],
   { cdnHost, interactive, retry }: { cdnHost: string; interactive: boolean; retry: string },
 ) {
-  let connection = await connectHostname(apiKey, pullZoneId, host, hostname);
-  if (connection.status !== "dns") return connection;
+  const check = async () => {
+    const record = await lookUpDnsRecord(host, cdnHost);
+    const connection: Connection =
+      record.state === "matches" || record.state === "unknown"
+        ? await connectHostname(apiKey, pullZoneId, host, hostname)
+        : { status: "dns" };
 
-  logDnsRecord(host, cdnHost, "Add this DNS record at your DNS provider:");
-  if (!interactive) return connection;
+    return { record, connection };
+  };
+
+  let { record, connection } = await check();
+  logDnsCheck(host, cdnHost, record);
+
+  let checks = 1;
+  if (connection.status !== "dns" || !interactive) return { connection, record, checks };
 
   const controller = new AbortController();
   const stop = () => controller.abort();
@@ -208,12 +224,18 @@ async function waitForConnection(
 
   try {
     const deadline = Date.now() + WAIT_MS;
-    for (let check = 1; connection.status === "dns" && Date.now() < deadline; check++) {
+    for (; connection.status === "dns" && Date.now() < deadline; checks++) {
+      const waitingFor =
+        record.state === "matches" ? "bunny.net to see the DNS record" : "the DNS record";
       log.status(
-        `Waiting for DNS, ${count(check, "check")} so far (Ctrl+C to stop), checking ${host} every ${RECHECK_MS / 1000}s`,
+        `Waiting for ${waitingFor}, ${count(checks, "check")} so far (Ctrl+C to stop), checking ${host} every ${RECHECK_MS / 1000}s`,
       );
       await sleep(Math.min(RECHECK_MS, deadline - Date.now()), controller.signal);
-      connection = await connectHostname(apiKey, pullZoneId, host, hostname);
+
+      const next = await check();
+      const line = currentLine(next.record, cdnHost);
+      if (line !== currentLine(record, cdnHost)) log.detail(line);
+      ({ record, connection } = next);
     }
   } catch (error) {
     if (!controller.signal.aborted) throw error;
@@ -222,7 +244,58 @@ async function waitForConnection(
     process.off("SIGINT", stop);
   }
 
-  return connection;
+  return { connection, record, checks };
+}
+
+function logDnsCheck(host: string, cdnHost: string, record: DnsRecord) {
+  if (record.state === "matches") {
+    log.success(`The DNS record of ${host} points to ${cdnHost}`);
+  } else if (record.state === "unknown") {
+    log.warn(`Could not look up the DNS record of ${host}. It needs this record:`);
+  } else {
+    log.warn(`Set this DNS record for ${host} at your DNS provider:`);
+  }
+
+  logRecordLines(cdnHost, record);
+  if (record.state !== "matches" && host.split(".").length === 2) {
+    log.detail("At the root of a domain, use ALIAS, ANAME or CNAME flattening instead of CNAME.");
+  }
+}
+
+function logRecordLines(cdnHost: string, record: DnsRecord) {
+  log.detail(`expected  CNAME ${cdnHost}`);
+  log.detail(currentLine(record, cdnHost));
+}
+
+function currentLine(record: DnsRecord, cdnHost: string) {
+  switch (record.state) {
+    case "matches":
+      return `current   ${dnsValue(record.current)}   ✔${record.current.type === "A" ? ` (same address as ${cdnHost})` : ""}`;
+    case "elsewhere":
+      return `current   ${dnsValue(record.current)}   change this`;
+    case "missing":
+      return "current   none   add this record";
+    case "unknown":
+      return `current   unknown (DNS lookup failed: ${record.reason})`;
+  }
+}
+
+function dnsValue(value: DnsValue) {
+  return value.type === "CNAME"
+    ? `CNAME ${value.chain.join(" → ")}`
+    : `A ${value.addresses.join(", ")}`;
+}
+
+function dnsProblem(record: DnsRecord, cdnHost: string) {
+  switch (record.state) {
+    case "elsewhere":
+      return `its DNS record points to ${dnsValue(record.current)}, not to ${cdnHost}`;
+    case "missing":
+      return "it has no DNS record";
+    case "matches":
+    case "unknown":
+      return `bunny.net does not see a DNS record that points to ${cdnHost}`;
+  }
 }
 
 function sleep(ms: number, signal: AbortSignal) {

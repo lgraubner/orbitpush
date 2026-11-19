@@ -9,18 +9,14 @@ import {
   apiJson,
   apiKeyFromEnv,
   CreatedZone,
-  ensureDomains,
   envApiKey,
   geoZoneFlags,
-  getPullZone,
 } from "@/bunny.ts";
 import {
-  aliasProblem,
   type Config,
   CONFIG_FILE,
   GEO_ZONES,
   GeoZone,
-  hostnameProblem,
   MISSING_CONFIG,
   Region,
   STORAGE_REGIONS,
@@ -31,8 +27,6 @@ import { errorMessage, log } from "@/log.ts";
 export type InitFlags = {
   name?: string;
   dir?: string;
-  domain?: string;
-  alias?: string | string[];
   region?: string;
   "replication-region"?: string | string[];
   "delivery-region"?: string | string[];
@@ -92,7 +86,6 @@ export async function init(
         !deploying || existsSync(v) || `${v} not found. Build the site, then run deploy again`,
     }),
   );
-  const { domain, aliases } = domainFlags(flags);
 
   const regionAnswer = await ask(flags.region, "DE", () =>
     select({ message: "Main storage region", choices: STORAGE_REGIONS, default: "DE" }),
@@ -157,8 +150,7 @@ export async function init(
     config = {
       name,
       outputDir,
-      domain,
-      aliases,
+      aliases: [],
       region,
       replicationRegions,
       geoZones,
@@ -174,32 +166,15 @@ export async function init(
 
   log.success(`Created ${CONFIG_FILE}`);
 
-  const { url } = await ensureDomains(apiKey, config, await getPullZone(apiKey, config.pullZoneId));
-  log.success(`Ready: ${url}`);
+  log.success(`Ready: https://${name}.b-cdn.net`);
   if (!envApiKey()) log.detail("Set BUNNY_API_KEY in your environment before deploying.");
   if (!deploying) {
     log.detail("Next:");
     log.detail("  1. Build your site, then run `npx orbitpush deploy`");
-    log.detail(
-      domain
-        ? `  2. Add the DNS records above, then run \`npx orbitpush domains add ${domain}\``
-        : "  2. Use your own domain: `npx orbitpush domains add www.example.com`",
-    );
+    log.detail("  2. Use your own domain: `npx orbitpush domains add www.example.com`");
   }
 
   return { apiKey, config };
-}
-
-function domainFlags(flags: InitFlags) {
-  const domain = flags.domain?.trim() || undefined;
-  const domainProblem = hostnameProblem(domain ? [domain] : []);
-  if (domainProblem) throw new Error(`Invalid --domain: ${domainProblem}`);
-
-  const aliases = listFlag(flags.alias) ?? [];
-  const problem = hostnameProblem(aliases) ?? aliasProblem({ domain, aliases });
-  if (problem) throw new Error(`Invalid --alias: ${problem}`);
-
-  return { domain, aliases };
 }
 
 function listFlag(flag: string | string[] | undefined) {

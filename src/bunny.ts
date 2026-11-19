@@ -247,32 +247,24 @@ export async function ensureDomains(
   }
 
   let url = `https://${cdnHost}`;
+  const warnings: string[] = [];
   for (const domain of hostnames) {
     const hostname = findHostname(pullZone, domain);
-    if (!hostname) {
-      await addHostname(apiKey, config.pullZoneId, domain);
-      logDnsRecord(
-        domain,
-        cdnHost,
-        `Add this DNS record, then run \`orbitpush domains add ${domain}\` to finish:`,
-      );
-    }
+    if (!hostname) await addHostname(apiKey, config.pullZoneId, domain);
 
     const connection = await connectHostname(apiKey, config.pullZoneId, domain, hostname);
-    if (connection.status === "dns" && hostname) {
-      logDnsRecord(
-        domain,
-        cdnHost,
-        `DNS for ${domain} does not point to bunny.net yet. Add this record, then run \`orbitpush domains add ${domain}\`:`,
+    if (connection.status === "dns") {
+      warnings.push(
+        `${domain} is not connected: its DNS does not point to bunny.net yet. Run \`orbitpush domains add ${domain}\` to see the record it needs.`,
       );
-    } else if (connection.status === "failed" && hostname) {
-      log.warn(`No SSL certificate for ${domain} yet. bunny.net: ${connection.reason}`);
+    } else if (connection.status === "failed") {
+      warnings.push(`No SSL certificate for ${domain} yet. bunny.net: ${connection.reason}`);
     }
 
     if (connection.status === "connected" && domain === hostnames[0]) url = `https://${domain}`;
   }
 
-  return { url, connected: url !== `https://${cdnHost}` };
+  return { url, connected: url !== `https://${cdnHost}`, warnings };
 }
 
 export async function addHostname(apiKey: string, pullZoneId: number, host: string) {
@@ -376,14 +368,6 @@ export async function connectHostname(
   }
 
   return { status: "connected" };
-}
-
-export function logDnsRecord(host: string, cdnHost: string, message: string) {
-  log.warn(message);
-  log.detail(`${host} CNAME ${cdnHost}`);
-  if (host.split(".").length === 2) {
-    log.detail("At the root of a domain, use ALIAS, ANAME or CNAME flattening instead of CNAME.");
-  }
 }
 
 export async function purgeCache(apiKey: string, pullZoneId: number) {
