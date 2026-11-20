@@ -9,7 +9,7 @@ A Node CLI in TypeScript, bundled with esbuild into one file, that deploys a sta
 ## Working
 
 - When a step doesn't need my input, keep going. Put status notes in the same message as your next action.
-- A bug report, a question, or a design discussion is an investigation: it ends with the cause and the change you propose. Edit files once I ask for the change or run `/full-stop`.
+- A bug report, a question, or a design discussion is an investigation: it ends with the cause and the change you propose. Edit files once I ask for the change or run `/ship-pr`.
 - Stop and ask only when you can't continue without me, or before anything destructive: deleting data, force-pushing, publishing, or changing anything outside this repository. Running `init`, `deploy`, or `npm run test:e2e` against a real bunny.net account counts as outside. Ask with `AskUserQuestion`, so the session shows it is waiting.
 - Before asking which approach to take, check whether running something can answer it: behavior, timing, output, or performance. If it can, try it and let the result decide. Ask only for product or preference calls no experiment settles.
 - Before writing code, take the first that works: no code (the need is speculative), code already in this repo, the standard library, a platform feature, an installed dependency, then the minimum new code.

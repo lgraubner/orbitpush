@@ -11,16 +11,17 @@ license: MIT, adapted from tstack by Theo Browne; see .claude/LICENSE-tstack
 Wait with `scripts/pr-wait` from this skill's directory, by its absolute path. Never write your own watcher, polling loop, or `sleep` loop, and run one watcher per PR: every watcher on a GitHub account shares one rate limit.
 
 ```bash
-pr-wait <pr> [--repo owner/name] [--until green|any-change|merged]
+pr-wait <pr> [--repo owner/name] [--until green|any-change]
 ```
 
-It prints one line per real event. It exits 0 when the `--until` condition is met or the PR merges, 1 when it needs you (a required check failed, conflicts, PR closed), and 2 on bad input.
+It prints one line per real event. It exits 0 when the `--until` condition is met or the PR merges, 1 when it needs you (a required check failed or was cancelled, conflicts, PR closed), and 2 on bad input.
 
 - `green` (default): required checks green. A base branch without required checks, such as any private repo without GitHub Pro, gates on every CI check.
 - `any-change`: exit on the first event.
-- `merged`: wait for a ready PR to merge. Exits 1 on the first event other than a checks summary. A merge can take days and a Monitor expires, so run this mode with Bash `run_in_background`, which wakes you when it exits.
 
-Otherwise, run it with the Monitor tool (`timeout_ms: 3600000`), so each line wakes you. Start it again after you push, after you handle an exit 1, and after a resume; it remembers what it already reported. If it says another pid already watches the PR, do not start a second one. Kill the old one only if its events do not reach you.
+An event carries its context: a failed GitHub Actions check comes with its failed steps, its annotations by file and line, and the tail of its log, and a comment, review, or thread with its body and, for a thread, its file and line. Act on that; fetch the full log or thread only when the event does not explain the failure.
+
+Run it with the Monitor tool (`timeout_ms: 3600000`), so each line wakes you. Start it again after you push, after you handle an exit 1, and after a resume; it remembers what it already reported. If it says another pid already watches the PR, do not start a second one. Kill the old one only if its events do not reach you.
 
 When an event needs no action, end your turn without a message.
 
