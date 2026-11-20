@@ -20,7 +20,7 @@ _Avoid_: dist, build folder
 A bunny.net pull zone rule that matches a URL pattern and redirects or sets response headers. Each entry in `redirects` and in `headers` in `orbitpush.json` becomes one.
 
 **Managed rule**:
-An edge rule whose description starts with `orbitpush <hash>`. Only managed rules are written or deleted on deploy; rules created in the dashboard are never touched. The hash covers the rule's content, so a changed rule is a new managed rule. Its `OrderIndex` is its position in the rule files, outside the hash. Every deploy rewrites each managed rule still in the files, which undoes dashboard edits to it and moves it to its current position.
+An edge rule whose description starts with `orbitpush <hash>`. Only managed rules are written or deleted on deploy; rules created in the dashboard are never touched. The hash covers the rule's content, so a changed rule is a new managed rule. Its `OrderIndex`, outside the hash, follows its position in the rule files and is set above the `OrderIndex` of every other rule on the pull zone at each deploy, since bunny.net refuses a new rule whose `OrderIndex` another rule holds. Every deploy rewrites each managed rule still in the files, which undoes dashboard edits to it and moves it to its current position.
 
 **SPA mode**:
 The storage zone setting that serves `index.html` with status 200 for a missing path without a file extension. The redirect `{ "from": "/*", "to": "/index.html", "status": 200 }` in `orbitpush.json` turns it on; it is the only rewrite orbitpush supports, and it is not an edge rule.

@@ -202,18 +202,25 @@ async function waitForConnection(
   hostname: PullZone["Hostnames"][number],
   { cdnHost, interactive, retry }: { cdnHost: string; interactive: boolean; retry: string },
 ) {
-  const check = async () => {
+  const check = async (first: boolean): Promise<{ record: DnsRecord; connection: Connection }> => {
     const record = await lookUpDnsRecord(host, cdnHost);
-    const connection: Connection =
-      record.state === "other-pull-zone"
-        ? { status: "dns" }
-        : await connectHostname(apiKey, pullZoneId, host, hostname);
+    if (record.state === "other-pull-zone") return { record, connection: { status: "dns" } };
+
+    if (first && !hostname.HasCertificate) {
+      log.status(`Getting an SSL certificate for ${host}`);
+    }
+    const connection = await connectHostname(apiKey, pullZoneId, host, hostname);
 
     return { record, connection };
   };
+  const bunnySeesIt = (record: DnsRecord, connection: Connection) =>
+    connection.status === "connected" &&
+    !hostname.HasCertificate &&
+    (record.state === "elsewhere" || record.state === "missing");
 
-  let { record, connection } = await check();
-  logDnsCheck(host, cdnHost, record);
+  let { record, connection } = await check(true);
+  if (bunnySeesIt(record, connection)) log.success(`bunny.net sees the DNS record of ${host}`);
+  else logDnsCheck(host, cdnHost, record);
 
   let checks = 1;
   if (connection.status !== "dns" || !interactive) return { connection, record, checks };
@@ -232,7 +239,7 @@ async function waitForConnection(
       );
       await sleep(Math.min(RECHECK_MS, deadline - Date.now()), controller.signal);
 
-      const next = await check();
+      const next = await check(false);
       const line = currentLine(next.record, cdnHost);
       if (line !== currentLine(record, cdnHost)) log.detail(line);
       ({ record, connection } = next);
@@ -243,6 +250,8 @@ async function waitForConnection(
   } finally {
     process.off("SIGINT", stop);
   }
+
+  if (bunnySeesIt(record, connection)) log.success(`bunny.net sees the DNS record of ${host}`);
 
   return { connection, record, checks };
 }

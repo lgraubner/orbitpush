@@ -191,6 +191,17 @@ function fakeBunny({
       zone.hostnames = zone.hostnames.filter((h) => h.Value !== body.Hostname);
     }
     if (key === `POST ${API}/pullzone/2/edgerules/addOrUpdate`) {
+      // Measured on bunny.net: a new rule needs an OrderIndex no rule holds, an update does not
+      if (!body.Guid && zone.rules.some((r) => r.OrderIndex === body.OrderIndex)) {
+        return json(
+          {
+            ErrorKey: "edgerule.invalid",
+            Field: "EdgeRule",
+            Message: "Order index must be unique",
+          },
+          400,
+        );
+      }
       const Guid = body.Guid ?? `new${guid++}`;
       zone.rules = [...zone.rules.filter((r) => r.Guid !== Guid), { ...body, Guid }];
     }
@@ -289,6 +300,34 @@ test("add appends an alias that redirects to the connected primary domain", asyn
   );
   expect(writes).toContain(`POST ${API}/pullzone/2/purgeCache`);
   expect(output()).toContain("✔ example.com is connected and redirects to www.example.com");
+});
+
+test("add of a third alias writes its redirect though the rules after it hold the next order indexes", async () => {
+  const config = await site({ domain: "www.example.com", aliases: ["example.com", "example.net"] });
+  const { zone } = fakeBunny({
+    hostnames: ["www.example.com", "example.com", "example.net"].map(connected),
+    edgeRules: [DASHBOARD, { ...DASHBOARD, Guid: "zero", OrderIndex: 0 }, ...deployedRules(config)],
+    dns: new Set(["example.org"]),
+  });
+
+  await domains("key", config, ["add", "example.org"], options);
+
+  const managed = zone.rules
+    .filter((r) => r.Description?.startsWith("orbitpush "))
+    .sort((a, b) => a.OrderIndex - b.OrderIndex)
+    .map((r) => r.Description);
+  expect(managed).toEqual(
+    domainRules({
+      name: "site",
+      domain: "www.example.com",
+      aliases: ["example.com", "example.net", "example.org"],
+    }).map((r) => r.Description),
+  );
+  const dashboard = zone.rules.filter((r) => !r.Description?.startsWith("orbitpush "));
+  const lowest = Math.min(
+    ...zone.rules.filter((r) => !dashboard.includes(r)).map((r) => r.OrderIndex),
+  );
+  expect(dashboard.every((r) => r.OrderIndex < lowest)).toBe(true);
 });
 
 test("add skips what the pull zone already has: the hostname, and ForceSSL once it is on", async () => {
@@ -763,6 +802,53 @@ test("the DNS wait removes its Ctrl+C listener when it ends", async () => {
 const checkCounts = () =>
   [...output().matchAll(/\b(\d+) checks?\b/g)].map((match) => Number(match[1]));
 
+test("add in a terminal shows a status while bunny.net issues the certificate", async () => {
+  process.stderr.isTTY = true;
+  const config = await site({ domain: "www.example.com", aliases: [] });
+  fakeBunny({ hostnames: [connected("www.example.com")], dns: new Set(["example.com"]) });
+
+  await domains("key", config, ["add", "example.com"], options);
+
+  expect(output()).toContain("Getting an SSL certificate for example.com");
+});
+
+test("add in a terminal shows no certificate status for a hostname that has a certificate", async () => {
+  process.stderr.isTTY = true;
+  const config = await site({ domain: "www.example.com", aliases: [] });
+  fakeBunny({ hostnames: [connected("www.example.com")] });
+
+  await domains("key", config, ["add", "www.example.com"], { ...options, primary: false });
+
+  expect(output()).not.toContain("Getting an SSL certificate");
+});
+
+test("add in a terminal shows no certificate status for a CNAME to another pull zone", async () => {
+  process.stderr.isTTY = true;
+  const config = await site();
+  fakeBunny({ records: { "www.example.com": "other-site.b-cdn.net" } });
+
+  await expect(domains("key", config, ["add", "www.example.com"], options)).rejects.toThrow();
+
+  expect(output()).not.toContain("Getting an SSL certificate");
+});
+
+test("add in a terminal says bunny.net sees the record when the certificate comes on a recheck", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  process.stderr.isTTY = true;
+  const config = await site();
+  fakeBunny({
+    records: { "example.com": [undefined] },
+    addresses: { "example.com": ["203.0.113.5"] },
+    dns: new Set(["example.com"]),
+    certificateFromCheck: 2,
+  });
+
+  await settleWithFakeTimers(domains("key", config, ["add", "example.com"], { interactive: true }));
+
+  expect(output()).toContain("✔ bunny.net sees the DNS record of example.com");
+  expect(output()).toContain("✔ example.com is connected");
+});
+
 test("the DNS wait status counts the checks so far, starting at 1 check", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   process.stderr.isTTY = true;
@@ -1127,7 +1213,10 @@ test("add connects a root domain whose flattened addresses differ from ours when
 
   await domains("key", config, ["add", "example.com"], options);
 
-  expect(output()).toContain("current   A 203.0.113.5   differs from site.b-cdn.net");
+  expect(output()).not.toContain("differs from");
+  expect(output()).not.toContain("Set this DNS record");
+  expect(output()).not.toMatch(/ALIAS|ANAME|CNAME flattening/);
+  expect(output()).toContain("✔ bunny.net sees the DNS record of example.com");
   expect(writes).toContain(FORCE_SSL);
   expect(output()).toContain("✔ example.com is connected: https://example.com");
 });
@@ -1141,7 +1230,8 @@ test("add connects a hostname the public resolvers do not see yet when bunny.net
 
   await domains("key", config, ["add", "www.example.com"], options);
 
-  expect(output()).toContain("current   none   add this record");
+  expect(output()).not.toContain("add this record");
+  expect(output()).toContain("✔ bunny.net sees the DNS record of www.example.com");
   expect(writes).toContain(FORCE_SSL);
   expect(output()).toContain("✔ www.example.com is connected: https://www.example.com");
 });

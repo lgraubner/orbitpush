@@ -4,6 +4,16 @@ User-visible changes to orbitpush: commands, flags, exit codes, terminal output,
 
 ## Unreleased
 
+### Changed
+
+- Each deploy now places the edge rules from orbitpush after the edge rules you created in the dashboard. A dashboard redirect wins over an orbitpush redirect for the same URL, and an orbitpush header wins over a dashboard header. Before, the two shared order indexes, and which rule ran first was undefined.
+
+### Fixed
+
+- `domains add` and `deploy` no longer fail with `Could not write an edge rule: bunny.net says "Order index must be unique"` when a new alias, redirect or header lands ahead of rules already deployed, or on an `OrderIndex` a rule created in the dashboard holds.
+- `domains add` no longer asks you to change a DNS record that bunny.net accepted when it issued the certificate, such as a root domain whose ALIAS or flattened CNAME resolves to a different bunny.net address than the public resolvers see.
+- `domains add` and `deploy` show a status line while bunny.net issues an SSL certificate, instead of pausing without output.
+
 ## 0.3.0 - 2026-11-19
 
 ### Removed

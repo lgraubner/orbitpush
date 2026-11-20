@@ -331,6 +331,29 @@ test("deploy names the b-cdn.net URL until the domain has a certificate", async 
   expect(url).toBe("https://site-cdn.b-cdn.net");
 });
 
+test("deploy in a terminal shows a status while it gets a certificate, only for a hostname without one", async () => {
+  const dir = await outputDir();
+  const { isTTY } = process.stderr;
+  process.stderr.isTTY = true;
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  fakeBunny({
+    hostnames: [
+      { Value: "www.example.com", HasCertificate: true, ForceSSL: true },
+      { Value: "example.com", HasCertificate: false, ForceSSL: false },
+    ],
+  });
+
+  try {
+    await deploy("key", { ...config(dir), domain: "www.example.com", aliases: ["example.com"] });
+  } finally {
+    process.stderr.isTTY = isTTY;
+  }
+
+  const output = stripVTControlCharacters(stderr.mock.calls.join(""));
+  expect(output).toContain("Getting an SSL certificate for example.com");
+  expect(output).not.toContain("Getting an SSL certificate for www.example.com");
+});
+
 test("deploy returns the domain URL once it gets the domain a certificate", async () => {
   const dir = await outputDir();
   vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -787,7 +810,7 @@ test("deploy leaves a domain with certificate and Force SSL alone, matching case
   expect(domainRequests(requests)).toEqual([]);
 });
 
-test("deploy gives each rule its file position as OrderIndex and rewrites every deployed rule", async () => {
+test("deploy gives each rule its file position as OrderIndex, rewriting every deployed rule before adding new ones", async () => {
   const dir = await outputDir();
   const [c, a, e] = redirectRules(redirects("/c /d\n/a /b\n/e /f")).rules;
   const { edgeRuleWrites } = fakeBunny({
@@ -800,9 +823,27 @@ test("deploy gives each rule its file position as OrderIndex and rewrites every 
   await deploy("key", config(dir, "/c /d\n/a /b\n/e /f"));
 
   expect(edgeRuleWrites).toEqual([
-    { ...c, OrderIndex: 0 },
     { ...a, Guid: "a", OrderIndex: 1 },
     { ...e, Guid: "e", OrderIndex: 2 },
+    { ...c, OrderIndex: 0 },
+  ]);
+});
+
+test("deploy puts managed rules above the order indexes of other rules on the pull zone", async () => {
+  const dir = await outputDir();
+  const [a, b] = redirectRules(redirects("/a /b\n/c /d")).rules;
+  const { edgeRuleWrites } = fakeBunny({
+    edgeRules: [
+      { Guid: "mine", Description: "created in dashboard", OrderIndex: 0 },
+      { Guid: "old", Description: "orbitpush 0000000000 /x /y 301", OrderIndex: 4 },
+    ],
+  });
+
+  await deploy("key", config(dir, "/a /b\n/c /d"));
+
+  expect(edgeRuleWrites).toEqual([
+    { ...a, OrderIndex: 5 },
+    { ...b, OrderIndex: 6 },
   ]);
 });
 

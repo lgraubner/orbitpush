@@ -2,7 +2,7 @@
 
 Which Netlify features for static sites can be built on a storage zone and pull zone. Researched 2026-10-18 against the [edge rule API](https://bunny.net/docs/api-reference/core/pull-zone/addupdate-edge-rule). Rows marked _inferred_ or _guess_ have not been tried against a real pull zone.
 
-orbitpush uses two edge rule actions today, `Redirect` (1) and `SetResponseHeader` (5), and sets `OrderIndex` to the position in `orbitpush.json`.
+orbitpush uses two edge rule actions today, `Redirect` (1) and `SetResponseHeader` (5), and sets `OrderIndex` in the order of `orbitpush.json`, above the `OrderIndex` of every rule created in the dashboard. bunny.net answers HTTP 400 "Order index must be unique" to a new rule whose `OrderIndex` another rule holds, but accepts an update that shares one (measured on a throwaway pull zone on 2026-11-20), so `syncRules()` rewrites the kept rules before it adds new ones.
 
 ## Covered
 
