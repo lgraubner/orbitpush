@@ -4,6 +4,8 @@ User-visible changes to orbitpush: commands, flags, exit codes, terminal output,
 
 ## Unreleased
 
+## 0.4.0 - 2026-11-20
+
 ### Changed
 
 - Each deploy now places the edge rules from orbitpush after the edge rules you created in the dashboard. A dashboard redirect wins over an orbitpush redirect for the same URL, and an orbitpush header wins over a dashboard header. Before, the two shared order indexes, and which rule ran first was undefined.
