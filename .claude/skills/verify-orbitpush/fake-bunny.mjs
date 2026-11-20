@@ -301,7 +301,19 @@ function api(state, url, method, headers, body) {
     }
 
     if (action === "edgerules" && guid === "addOrUpdate" && method === "POST") {
-      // bunny.net updates the rule with a known Guid in place and defaults OrderIndex to 0
+      // bunny.net updates the rule with a known Guid in place and defaults OrderIndex to 0. It
+      // refuses a new rule that names an OrderIndex another rule holds; an update may share one
+      if (
+        !json.Guid &&
+        json.OrderIndex !== undefined &&
+        zone.EdgeRules.some((r) => r.OrderIndex === json.OrderIndex)
+      ) {
+        return reply(400, {
+          ErrorKey: "edgerule.invalid",
+          Field: "EdgeRule",
+          Message: "Order index must be unique",
+        });
+      }
       const rule = { OrderIndex: 0, ...json, Guid: json.Guid ?? randomUUID() };
       const index = zone.EdgeRules.findIndex((r) => r.Guid === rule.Guid);
       if (index === -1) zone.EdgeRules.push(rule);

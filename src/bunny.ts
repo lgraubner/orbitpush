@@ -268,6 +268,7 @@ export async function ensureDomains(
     const hostname = findHostname(pullZone, domain);
     if (!hostname) await addHostname(apiKey, config.pullZoneId, domain);
 
+    if (!hostname?.HasCertificate) log.status(`Getting an SSL certificate for ${domain}`);
     const connection = await connectHostname(apiKey, config.pullZoneId, domain, hostname);
     if (connection.status === "dns") {
       warnings.push(
@@ -534,10 +535,8 @@ export async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeR
     log.warn("The site is disabled. Run `orbitpush enable` to serve it again.");
   }
 
-  const wanted = new Map<string, EdgeRule & { OrderIndex: number }>();
-  rules.forEach((rule, OrderIndex) => {
-    if (!wanted.has(rule.Description)) wanted.set(rule.Description, { ...rule, OrderIndex });
-  });
+  const wanted = new Map<string, EdgeRule>();
+  for (const rule of rules) if (!wanted.has(rule.Description)) wanted.set(rule.Description, rule);
 
   const kept = new Map<string, { Guid: string; OrderIndex: number }>();
   const removed = pullZone.EdgeRules.filter((r) => {
@@ -547,10 +546,25 @@ export async function syncRules(apiKey: string, pullZone: PullZone, rules: EdgeR
     kept.set(r.Description, r);
     return false;
   });
-  const writes = [...wanted.values()].map((rule) => {
-    const deployed = kept.get(rule.Description);
-    return deployed ? { ...rule, Guid: deployed.Guid } : rule;
-  });
+
+  // bunny.net refuses a new rule whose OrderIndex another rule holds, but lets an update share
+  // one, so managed rules sit above every other rule and the kept ones move before any is added
+  const keptGuids = new Set([...kept.values()].map((r) => r.Guid));
+  const others = pullZone.EdgeRules.filter((r) => !keptGuids.has(r.Guid));
+  const base = Math.max(-1, ...others.map((r) => r.OrderIndex)) + 1;
+  const ordered = [...wanted.values()].map((rule, position) => ({
+    rule,
+    deployed: kept.get(rule.Description),
+    OrderIndex: base + position,
+  }));
+  const writes = [
+    ...ordered.flatMap(({ rule, deployed, OrderIndex }) =>
+      deployed ? [{ ...rule, Guid: deployed.Guid, OrderIndex }] : [],
+    ),
+    ...ordered.flatMap(({ rule, deployed, OrderIndex }) =>
+      deployed ? [] : [{ ...rule, OrderIndex }],
+    ),
+  ];
   const added = writes.length - kept.size;
   const changes = { added, removed: removed.length, kept: kept.size };
   if (!writes.length && !removed.length) return changes;
